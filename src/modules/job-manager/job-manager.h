@@ -37,6 +37,7 @@ struct job_manager {
     struct queue_ctx *queue;
     struct update *update;
     struct jobtap *jobtap;
+    struct simulator *simulator;
 };
 
 #endif /* !_FLUX_JOB_MANAGER_H */

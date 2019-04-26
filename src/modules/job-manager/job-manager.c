@@ -39,6 +39,7 @@
 #include "getattr.h"
 #include "update.h"
 #include "jobtap-internal.h"
+#include "simulator.h"
 
 #include "job-manager.h"
 
@@ -241,6 +242,10 @@ int mod_main (flux_t *h, int argc, char **argv)
         flux_log_error (h, "error creating job update interface");
         goto done;
     }
+    if (!(ctx.simulator = sim_ctx_create (&ctx))) {
+        flux_log_error (h, "error creating simulator context");
+        goto done;
+    }
     if (flux_msg_handler_addvec (h, htab, &ctx, &ctx.handlers) < 0) {
         flux_log_error (h, "flux_msghandler_add");
         goto done;
@@ -264,6 +269,7 @@ done:
     annotate_ctx_destroy (ctx.annotate);
     kill_ctx_destroy (ctx.kill);
     raise_ctx_destroy (ctx.raise);
+    sim_ctx_destroy (ctx.simulator);
     wait_ctx_destroy (ctx.wait);
     drain_ctx_destroy (ctx.drain);
     start_ctx_destroy (ctx.start);

@@ -37,6 +37,7 @@
 #include "raise.h"
 #include "queue.h"
 #include "housekeeping.h"
+#include "simulator.h"
 
 struct alloc {
     struct job_manager *ctx;
@@ -293,6 +294,7 @@ int alloc_request (struct alloc *alloc, struct job *job)
     if (flux_send (alloc->ctx->h, msg, 0) < 0)
         goto error;
     flux_msg_destroy (msg);
+    sim_sending_sched_request (alloc->ctx->simulator);
     return 0;
 error:
     flux_msg_destroy (msg);

@@ -941,6 +941,8 @@ static struct schedutil_ops ops = {
     .free = free_cb,
     .cancel = cancel_cb,
     .prioritize = prioritize_cb,
+    .busy = NULL,
+    .idle = NULL,
 };
 
 static int process_args (flux_t *h, struct simple_sched *ss,

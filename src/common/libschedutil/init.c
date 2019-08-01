@@ -81,6 +81,13 @@ int add_outstanding_future (schedutil_t *util, flux_future_t *fut)
 {
     if (zlistx_add_end (util->outstanding_futures, fut) == NULL)
         return -1;
+
+    // If this is the first future, we have gone from idle to busy, so call the
+    // corresponding busy cb (if it is set)
+    if (zlistx_size (util->outstanding_futures) == 1 && util->ops->busy) {
+        flux_log (util->h, LOG_DEBUG, "schedutil: running idle_cb");
+        util->ops->busy (util->h, util->cb_arg);
+    }
     return 0;
 }
 
@@ -90,6 +97,13 @@ int remove_outstanding_future (schedutil_t *util, flux_future_t *fut)
         return -1;
     if (zlistx_detach_cur (util->outstanding_futures) == NULL)
         return -1;
+
+    // If this is the last future, we have gone from busy to idle, so call the
+    // corresponding idle cb (if it is set)
+    if (zlistx_size (util->outstanding_futures) == 0 && util->ops->idle) {
+        flux_log (util->h, LOG_DEBUG, "schedutil: running idle_cb");
+        util->ops->idle (util->h, util->cb_arg);
+    }
     return 0;
 }
 

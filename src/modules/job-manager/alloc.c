@@ -160,6 +160,8 @@ static void alloc_response_cb (flux_t *h,
     json_t *R = NULL;
     struct job *job;
 
+    sim_received_alloc_response (ctx->simulator);
+
     if (flux_response_decode (msg, NULL, NULL) < 0)
         goto teardown; // ENOSYS here if scheduler not loaded/shutting down
     if (flux_msg_unpack (msg,

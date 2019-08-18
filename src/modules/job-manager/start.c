@@ -94,6 +94,7 @@
 #include "raise.h"
 
 #include "start.h"
+#include "simulator.h"
 
 struct start {
     struct job_manager *ctx;
@@ -226,6 +227,7 @@ static void start_response_cb (flux_t *h,
         goto error;
     }
     if (streq (type, "start")) {
+        sim_received_start_response (ctx->simulator);
         if (job->reattach)
             flux_log (h,
                       LOG_ERR,

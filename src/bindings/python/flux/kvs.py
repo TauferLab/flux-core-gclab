@@ -54,6 +54,8 @@ def get_key_direct(flux_handle, key, namespace=None):
     RAW.flux_future_destroy(future)
     return ret
 
+def get_key_direct(flux_handle, key):
+    return json.loads(get_key_raw(flux_handle, key))
 
 def exists(flux_handle, key, namespace=None):
     """Determine if key exists

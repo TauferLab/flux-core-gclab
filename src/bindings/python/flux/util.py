@@ -101,6 +101,7 @@ def interruptible(func):
 
 
 def encode_payload(payload):
+    # Convert payload to ffi.NULL or utf-8 string
     if payload is None or payload == ffi.NULL:
         payload = ffi.NULL
     elif isinstance(payload, str):
@@ -113,7 +114,7 @@ def encode_payload(payload):
 
 
 def encode_topic(topic):
-    # Convert topic to utf-8 binary string
+    # Convert topic to utf-8 string
     if topic is None or topic == ffi.NULL:
         raise EnvironmentError(errno.EINVAL, "Topic must not be None/NULL")
     if isinstance(topic, str):

@@ -21,10 +21,15 @@ extern "C" {
 /* The VERSION_STRING may include a "-N-hash" suffix from git describe
  * if this snapshot is not tagged.  This is not reflected in VERSION_PATCH.
  */
-#define FLUX_CORE_VERSION_STRING    "@PACKAGE_VERSION@"
-#define FLUX_CORE_VERSION_MAJOR     @AX_MAJOR_VERSION@
-#define FLUX_CORE_VERSION_MINOR     @AX_MINOR_VERSION@
-#define FLUX_CORE_VERSION_PATCH     @AX_POINT_VERSION@
+// #define FLUX_CORE_VERSION_STRING    "@PACKAGE_VERSION@"
+// #define FLUX_CORE_VERSION_MAJOR     @AX_MAJOR_VERSION@
+// #define FLUX_CORE_VERSION_MINOR     @AX_MINOR_VERSION@
+// #define FLUX_CORE_VERSION_PATCH     @AX_POINT_VERSION@
+
+#define FLUX_CORE_VERSION_STRING    "73f456c2b"
+#define FLUX_CORE_VERSION_MAJOR     0
+#define FLUX_CORE_VERSION_MINOR     13
+#define FLUX_CORE_VERSION_PATCH     0
 
 /* The version in 3 bytes, for numeric comparison.
  */

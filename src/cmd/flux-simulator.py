@@ -459,7 +459,7 @@ def reload_scheduler(flux_handle):
     except Exception as e:
         print(f"Error removing module: {e}")
 
-    path = flux.util.modfind("sched-simple")
+    path = flux.util.modfind("sched-simple").decode('utf-8')
     try:
         flux_handle.rpc("cmb.insmod", payload=json.dumps({"path": path, "args": []})).get()
     except Exception as e:
@@ -604,10 +604,10 @@ def main():
     reader = SacctReader(args.job_file)
     reader.validate_trace()
     insert_resource_data(flux_handle, args.num_ranks, args.cores_per_rank)
-    reload_scheduler(flux_handle)
     jobs = list(reader.read_trace())
     for job in jobs:
         job.insert_apriori_events(simulation)
+    reload_scheduler(flux_handle)
 
     load_missing_modules(flux_handle)
 

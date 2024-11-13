@@ -7,10 +7,10 @@ test_description='Test flux simulator command'
 test_under_flux 1
 
 # Set CLIMain log level to logging.DEBUG (10), to enable stack traces
-export FLUX_PYCLI_LOGLEVEL=10
+export FLUX_PYCLI_LOGLEVEL=3
 
 flux setattr log-stderr-level 1
-
+SHARNESS_TEST_SRCDIR='/home/j/Desktop/flux/flux-core-gclab/t'
 SIM_JOBTRACES_DIR=${SHARNESS_TEST_SRCDIR}/simulator/job-traces
 
 test_expect_success 'flux simulator fails with usage message' '
@@ -19,12 +19,12 @@ test_expect_success 'flux simulator fails with usage message' '
 '
 
 test_expect_success 'flux simulator with single node works' '
-	flux simulator $SIM_JOBTRACES_DIR/10-single-node.csv 1 16 >run1.out &&
+    flux simulator /home/j/Desktop/flux/flux-core-gclab/t/simulator/job-traces/10-single-node.csv 1 16 >run1.out 2>run1.err &&
     grep -i "utilization: 100" run1.out
 '
 
 test_expect_success 'flux simulator with multiple nodes works' '
-	flux simulator $SIM_JOBTRACES_DIR/10-single-node.csv 3 16 >run2.out &&
+	flux simulator /home/j/Desktop/flux/flux-core-gclab/t/simulator/job-traces/10-multi-node.csv 30 16 >run2.out 2>run2.err &&
     grep -i "utilization: 83" run2.out
 '
 

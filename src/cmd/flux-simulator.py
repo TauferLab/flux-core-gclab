@@ -10,8 +10,9 @@ import logging
 import heapq
 from abc import ABCMeta, abstractmethod
 from datetime import datetime, timedelta
-from collections import Sequence, namedtuple
-
+from collections.abc import Sequence
+from collections import namedtuple
+import math
 import six
 import flux
 import flux.job
@@ -21,10 +22,15 @@ import flux.constants
 
 
 def create_resource(res_type, count, with_child=[]):
+    '''
+    Creates a resource dictionary for the 
+
+    Note: 'count' variable must be of type int. Otherwise it will cause issues during scheduling. 
+    '''
     assert isinstance(with_child, Sequence), "child resource must be a sequence"
     assert not isinstance(with_child, str), "child resource must not be a string"
     assert count > 0, "resource count must be > 0"
-
+    assert isinstance(count, int), "Count parameter must be of type int"
     res = {"type": res_type, "count": count}
 
     if len(with_child) > 0:
@@ -33,7 +39,7 @@ def create_resource(res_type, count, with_child=[]):
 
 
 def create_slot(label, count, with_child):
-    slot = create_resource("slot", count, with_child)
+    slot = create_resource("slot", math.ceil(count), with_child)
     slot["label"] = label
     return slot
 
@@ -59,7 +65,7 @@ class Job(object):
             return self._jobspec
 
         assert self.ncpus % self.nnodes == 0
-        core = create_resource("core", self.ncpus / self.nnodes)
+        core = create_resource("core", math.ceil(self.ncpus / self.nnodes))
         slot = create_slot("task", 1, [core])
         if self.nnodes > 0:
             resource_section = create_resource("node", self.nnodes, [slot])
@@ -423,7 +429,7 @@ def job_state_cb(flux_handle, watcher, msg, simulation):
     example payload: {u'transitions': [[63652757504, u'CLEANUP'], [63652757504, u'INACTIVE']]}
     '''
     logger.log(9, "Received a job state cb. msg payload: {}".format(msg.payload))
-    for jobid, state in msg.payload['transitions']:
+    for jobid, state, b in msg.payload['transitions']:
         simulation.record_job_state_transition(jobid, state)
 
 def get_loaded_modules(flux_handle):
@@ -448,10 +454,16 @@ def reload_scheduler(flux_handle):
             sched_module = module["name"]
 
     logger.debug("Reloading the '{}' module".format(sched_module))
-    flux_handle.rpc("cmb.rmmod", payload={"name": "sched-simple"}).get()
-    path = flux.util.modfind("sched-simple")
-    flux_handle.rpc("cmb.insmod", payload=json.dumps({"path": path, "args": []})).get()
+    try:
+        flux_handle.rpc("cmb.rmmod", payload={"name": "sched-simple"}).get()
+    except Exception as e:
+        print(f"Error removing module: {e}")
 
+    path = flux.util.modfind("sched-simple")
+    try:
+        flux_handle.rpc("cmb.insmod", payload=json.dumps({"path": path, "args": []})).get()
+    except Exception as e:
+        print(e)
 
 def job_exception_cb(flux_handle, watcher, msg, cb_args):
     logger.warn("Detected a job exception, but not handling it")
@@ -591,19 +603,26 @@ def main():
     )
     reader = SacctReader(args.job_file)
     reader.validate_trace()
+    insert_resource_data(flux_handle, args.num_ranks, args.cores_per_rank)
+    reload_scheduler(flux_handle)
     jobs = list(reader.read_trace())
     for job in jobs:
         job.insert_apriori_events(simulation)
 
     load_missing_modules(flux_handle)
-    insert_resource_data(flux_handle, args.num_ranks, args.cores_per_rank)
-    reload_scheduler(flux_handle)
 
     watchers, services = setup_watchers(flux_handle, simulation)
     exec_hello(flux_handle)
     simulation.advance()
-    flux_handle.reactor_run(flux_handle.get_reactor(), 0)
-    teardown_watchers(flux_handle, watchers, services)
+    
+    try:
+        flux_handle.reactor_run(flux_handle.get_reactor(), 0)
+    except Exception as e:
+        logger.error(f"Reactor encountered an exception: {e}")
+    try:
+        teardown_watchers(flux_handle, watchers, services)
+    except Exception as e:
+        logger.error(f"Error tearing down watchers {e}")
     exec_validator.post_analysis(simulation)
 
 if __name__ == "__main__":

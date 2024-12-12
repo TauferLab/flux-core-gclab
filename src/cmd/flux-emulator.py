@@ -134,7 +134,7 @@ class Job(object):
         )
 
     def cancel(self, flux_handle):
-        flux.job.RAW.cancel(flux_handle, self.jobid, "Canceled by simulator")
+        flux.job.RAW.cancel(flux_handle, self.jobid, "Canceled by emulator")
 
     def insert_apriori_events(self, simulation):
         # TODO: add priority to `add_event` so that all submits for a given time
@@ -575,7 +575,7 @@ class SimpleExec(object):
         print("Average Core-Utilization: {:.2f}%".format((self.used_core_hours / total_core_hours) * 100))
 
 
-logger = logging.getLogger("flux-simulator")
+logger = logging.getLogger("flux-emulator")
 
 
 @flux.util.CLIMain(logger)

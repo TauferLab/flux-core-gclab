@@ -433,8 +433,15 @@ def job_state_cb(flux_handle, watcher, msg, simulation):
         simulation.record_job_state_transition(jobid, state)
 
 def get_loaded_modules(flux_handle):
-    modules = flux_handle.rpc("cmb.lsmod").get()
-    return modules["mods"]
+    """
+    Retrieve the list of loaded modules in the current Flux instance.
+    """
+    try:
+        modules = flux_handle.rpc("module.list").get()["mods"]
+        print(modules)
+        return modules
+    except Exception as e:
+        raise RuntimeError(f"Error retrieving loaded modules: {e}")
 
 
 def load_missing_modules(flux_handle):
@@ -447,24 +454,28 @@ def load_missing_modules(flux_handle):
 
 def reload_scheduler(flux_handle):
     sched_module = "sched-simple"
+    path = None
+    
     # Check if there is a module already loaded providing 'sched' service,
     # if so, reload that module
     for module in get_loaded_modules(flux_handle):
         if "sched" in module["services"]:
             sched_module = module["name"]
-
+            path = module["path"]
+        
     logger.debug("Reloading the '{}' module".format(sched_module))
-    try:
-        flux_handle.rpc("cmb.rmmod", payload={"name": "sched-simple"}).get()
-    except Exception as e:
-        print(f"Error removing module: {e}")
-
-    path = flux.util.modfind("sched-simple").decode('utf-8')
-    try:
-        flux_handle.rpc("cmb.insmod", payload=json.dumps({"path": path, "args": []})).get()
-    except Exception as e:
-        print(e)
-
+    if path is not None:
+        try:
+            flux_handle.rpc("module.remove", payload={"name": "sched-simple"}).get()
+        except Exception as e:
+            print(f"Error removing module: {e}")
+        try:
+            flux_handle.rpc("module.load", payload={"path": path, "args": []}).get()
+        except Exception as e:
+            print(e)
+    else: 
+        raise RuntimeError("Unable to get scheduler path (is your scheduler module loaded?)")
+    
 def job_exception_cb(flux_handle, watcher, msg, cb_args):
     logger.warn("Detected a job exception, but not handling it")
 

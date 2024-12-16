@@ -49,7 +49,6 @@ __all__ = [
     "encode_topic",
     "CLIMain",
     "parse_fsd",
-    "modfind",
 ]
 
 
@@ -290,25 +289,6 @@ class YesNoAction(argparse.Action):
         if value not in ["yes", "no"]:
             raise ValueError(f"{option_string} requires either 'yes' or 'no'")
         setattr(namespace, self.dest, value == "yes")
-
-
-def modfind(modname):
-    """Search FLUX_MODULE_PATH for a shared library (.so) of a given name
-
-    :param modname: name of the module to search for
-    :type modname: str, bytes, unicode
-    :returns: path of the first matching shared library in FLUX_MODULE_PATH
-    """
-    searchpath = os.getenv("FLUX_MODULE_PATH")
-    if searchpath is None:
-        raise ValueError("FLUX_MODULE_PATH not set")
-    modname = six.ensure_binary(modname)
-    ret = raw.modfind(searchpath, modname, ffi.NULL, ffi.NULL)
-    if ret is None:
-        raise EnvironmentError(
-            errno.ENOENT, "{} not found in module search path".format(modname)
-        )
-    return ret
 
 
 class CLIMain(object):

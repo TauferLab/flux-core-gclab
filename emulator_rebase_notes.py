@@ -1,5 +1,6 @@
 # Legacy function for the flux emulator. needs to be revisited for modern flux
-# used in post analysis in 
+# used in post sim analysis
+# The entire job.py file needs to be removed because it has been reworked. This can probably be rewritten for that.  
 
 def convert_id(jobid, src="dec", dst="dec"):
     valid_id_types = six.string_types + six.integer_types
@@ -109,6 +110,9 @@ def test_12_convert_id(self):
         self.assertEqual(error.exception.errno, errno.EINVAL)
 
 
-# update note: had to make a workaround for the "idle" bool in sched.c in sched-simple
+# update note1: had to make a workaround for the "idle" bool in sched.c in sched-simple
 # There is now a flux_watcher_t for "idle" that is separate from the one that was added for the flux emulator
-# For now, I am renaming the bool "idle" to "busy", but it may be better to utilize this flux_watcher_t
+# For now, I am renaming the bool "idle" to "busy" and flipping the values, but it may be better to utilize flux_watcher_t
+
+#Update note2: flux module interface has changed. Needed to change instances of "cmb.x" to "module.x" 
+# Also removing modfind because its not needed or supported in its current form

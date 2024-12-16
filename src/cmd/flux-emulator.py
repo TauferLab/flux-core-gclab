@@ -419,7 +419,7 @@ def insert_resource_data(flux_handle, num_ranks, cores_per_rank):
             "0-{}".format(cores_per_rank - 1) if cores_per_rank > 1 else "0"
         )
     put_rc = flux.kvs.put(flux_handle, kvs_key, resource_dict)
-    if put_rc < 0:
+    if put_rc is not None:
         raise ValueError("Error inserting resource data into KVS, rc={}".format(put_rc))
     flux.kvs.commit(flux_handle)
 

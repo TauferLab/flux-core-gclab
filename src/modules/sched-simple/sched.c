@@ -58,7 +58,7 @@ struct simple_sched {
     flux_watcher_t *prep;
     flux_watcher_t *check;
     flux_watcher_t *idle;
-    bool idle;
+    bool busy;
     flux_msg_t *quiescent_req;
 };
 
@@ -187,7 +187,7 @@ static struct simple_sched * simple_sched_create (void)
      * concurrency being excessively large.
      */
     ss->alloc_limit = 8;
-    ss->idle = true;
+    ss->busy = false;
     return ss;
 }
 
@@ -873,7 +873,7 @@ static void idle_cb (flux_t *h, void *arg)
 {
     struct simple_sched *ss = arg;
 
-    ss->idle = true;
+    ss->busy = false;
     if (ss->quiescent_req) {
         if (respond_to_quiescent (h, ss->quiescent_req) < 0)
             flux_log (h, LOG_ERR,
@@ -886,7 +886,7 @@ static void idle_cb (flux_t *h, void *arg)
 static void busy_cb (flux_t *h, void *arg)
 {
     struct simple_sched *ss = arg;
-    ss->idle = false;
+    ss->busy = true;
 }
 
 static void quiescent_cb (flux_t *h, flux_msg_handler_t *mh,
@@ -898,7 +898,7 @@ static void quiescent_cb (flux_t *h, flux_msg_handler_t *mh,
     // respond immediately since this scheduler has no outstanding
     // futures/messages itself.  Otherwise, delay responding until the `idle_cb`
     // is called.
-    if (ss->idle) {
+    if (!ss->busy) {
         flux_log (h, LOG_DEBUG,
                   "quiescent_cb: immediately responding to quiescent request "
                   "since schedutil is idle");

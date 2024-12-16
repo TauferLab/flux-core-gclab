@@ -107,3 +107,8 @@ def test_12_convert_id(self):
         with self.assertRaises(EnvironmentError) as error:
             job.convert_id("foo.bar", src="kvs")
         self.assertEqual(error.exception.errno, errno.EINVAL)
+
+
+# update note: had to make a workaround for the "idle" bool in sched.c in sched-simple
+# There is now a flux_watcher_t for "idle" that is separate from the one that was added for the flux emulator
+# For now, I am renaming the bool "idle" to "busy", but it may be better to utilize this flux_watcher_t

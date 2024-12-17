@@ -116,3 +116,5 @@ def test_12_convert_id(self):
 
 #Update note2: flux module interface has changed. Needed to change instances of "cmb.x" to "module.x" 
 # Also removing modfind because its not needed or supported in its current form
+
+#Update note3: Removed job.py because it has been replaced with something else in newest flux ver

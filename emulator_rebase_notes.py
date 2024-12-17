@@ -118,3 +118,6 @@ def test_12_convert_id(self):
 # Also removing modfind because its not needed or supported in its current form
 
 #Update note3: Removed job.py because it has been replaced with something else in newest flux ver
+
+#Update note4: removed flags parameter from submit function calling submit_async in emu Job class
+# It has been removed from submit_async.    

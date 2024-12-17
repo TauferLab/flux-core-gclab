@@ -95,7 +95,7 @@ class Job(object):
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("Submitting job with FLUX_JOB_DEBUG enabled")
             flags = flux.constants.FLUX_JOB_DEBUG
-        self._submit_future = flux.job.submit_async(flux_handle, jobspec_json, flags=flags)
+        self._submit_future = flux.job.submit_async(flux_handle, jobspec_json)
 
     @property
     def jobid(self):

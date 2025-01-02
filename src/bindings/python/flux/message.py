@@ -147,7 +147,7 @@ class Message(WrapperPimpl):
         :return type: Message
         """
         return Message(
-            type_id=self.type, handle=self.pimpl.copy(payload), destruct=True
+            type_id=self.type, handle=self.pimpl.copy(payload)
         )
 
 

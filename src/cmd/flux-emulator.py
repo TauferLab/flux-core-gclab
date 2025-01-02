@@ -232,6 +232,7 @@ class Simulation(object):
         if self.start_job_hook:
             self.start_job_hook(self, job)
         job.start(self.flux_handle, start_msg, self.current_time)
+        print("BRUH")
         logger.info("Started job {}".format(job.jobid))
         self.add_event(job.complete_time, lambda: self.complete_job(job))
         logger.debug("Registered job {} to complete at {}".format(job.jobid, job.complete_time))
@@ -491,7 +492,11 @@ def register_fake_resources(flux_handle):
         except Exception as e:
             print(f"Error removing module: {e}")
         try:
-            flux_handle.rpc("module.load", payload={"path": resource_module_path, "args": []}).get()
+            flux_handle.rpc("module.load",
+                payload={
+                  "path": resource_module_path,
+                  "args": ["noverify"],
+                }).get()
             flux_handle.rpc("module.load", payload={"path": path, "args": []}).get()
         except Exception as e:
             print(e)
@@ -605,8 +610,10 @@ class SimpleExec(object):
         total_core_hours = (total_num_cores * (self.makespan.end - self.makespan.beginning)) / 3600
         print("Total Core-Hours: {:,.1f}".format(total_core_hours))
         print("Used Core-Hours: {:,.1f}".format(self.used_core_hours))
-        print("Average Core-Utilization: {:.2f}%".format((self.used_core_hours / total_core_hours) * 100))
-
+        try:
+            print("Average Core-Utilization: {:.2f}%".format((self.used_core_hours / total_core_hours) * 100))
+        except:
+            print("ERROR: Total core hours is 0. Simulation likely didn't run or no jobs were submitted. ")
 
 logger = logging.getLogger("flux-emulator")
 

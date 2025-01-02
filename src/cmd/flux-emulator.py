@@ -232,7 +232,6 @@ class Simulation(object):
         if self.start_job_hook:
             self.start_job_hook(self, job)
         job.start(self.flux_handle, start_msg, self.current_time)
-        print("BRUH")
         logger.info("Started job {}".format(job.jobid))
         self.add_event(job.complete_time, lambda: self.complete_job(job))
         logger.debug("Registered job {} to complete at {}".format(job.jobid, job.complete_time))
@@ -461,7 +460,7 @@ def load_missing_modules(flux_handle):
     pass
 
 
-def register_fake_resources(flux_handle):
+def reload_modules(flux_handle):
     '''
     To make the resource.R that we submitted to KVS earlier register with the 
     Flux instance, we need to reload both the resource module and scheduler in 
@@ -647,7 +646,7 @@ def main():
     jobs = list(reader.read_trace())
     for job in jobs:
         job.insert_apriori_events(simulation)
-    register_fake_resources(flux_handle)
+    reload_modules(flux_handle)
 
     load_missing_modules(flux_handle)
 

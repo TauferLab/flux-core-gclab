@@ -154,7 +154,7 @@ class EventList(six.Iterator):
 
     def add_event(self, time, callback):
         if self._current_time is not None and time <= self._current_time:
-            logger.warn(
+            logger.warning(
                 "Adding a new event at a time ({}) <= the current time ({})".format(
                     time, self._current_time
                 )
@@ -338,16 +338,16 @@ def job_from_slurm_row(row):
     )
     elapsed = walltime_str_to_timedelta(row["Elapsed"]).total_seconds()
     if elapsed <= 0:
-        logger.warn("Elapsed time ({}) <= 0".format(elapsed))
+        logger.warning("Elapsed time ({}) <= 0".format(elapsed))
     timelimit = walltime_str_to_timedelta(row["Timelimit"]).total_seconds()
     if elapsed > timelimit:
-        logger.warn(
+        logger.warning(
             "Elapsed time ({}) greater than Timelimit ({})".format(elapsed, timelimit)
         )
     nnodes = int(row["NNodes"])
     ncpus = int(row["NCPUS"])
     if nnodes > ncpus:
-        logger.warn(
+        logger.warning(
             "Number of Nodes ({}) greater than Number of CPUs ({}), setting NCPUS = NNodes".format(
                 nnodes, ncpus
             )
@@ -356,7 +356,7 @@ def job_from_slurm_row(row):
     elif ncpus % nnodes != 0:
         old_ncpus = ncpus
         ncpus = math.ceil(ncpus / nnodes) * nnodes
-        logger.warn(
+        logger.warning(
             "Number of Nodes ({}) does not evenly divide the Number of CPUs ({}), setting NCPUS to an integer multiple of the number of nodes ({})".format(
                 nnodes, old_ncpus, ncpus
             )
@@ -503,7 +503,7 @@ def reload_modules(flux_handle):
         raise RuntimeError("Unable to get scheduler path (is your scheduler module loaded?)")
     
 def job_exception_cb(flux_handle, watcher, msg, cb_args):
-    logger.warn("Detected a job exception, but not handling it")
+    logger.warning("Detected a job exception, but not handling it")
 
 
 def sim_exec_start_cb(flux_handle, watcher, msg, simulation):
@@ -599,7 +599,7 @@ class SimpleExec(object):
 
     def post_analysis(self, simulation):
         if self.makespan.beginning > self.makespan.end:
-            logger.warn("Makespan beginning ({}) greater than end ({})".format(
+            logger.warning("Makespan beginning ({}) greater than end ({})".format(
                 self.makespan.beginning,
                 self.makespan.end,
             ))

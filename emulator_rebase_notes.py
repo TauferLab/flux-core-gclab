@@ -121,3 +121,7 @@ def test_12_convert_id(self):
 
 #Update note4: removed flags parameter from submit function calling submit_async in emu Job class
 # It has been removed from submit_async.    
+
+#Undid a change that I make to version.h.in in libflux common. The issue I was having then is fixed with the new Flux ver
+
+#Updated insert_resource_data in flux-emulator to use ResourceSet from flux.resource

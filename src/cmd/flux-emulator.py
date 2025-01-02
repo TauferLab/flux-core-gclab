@@ -19,6 +19,8 @@ import flux.job
 import flux.util
 import flux.kvs
 import flux.constants
+from flux.resource import Rlist
+
 
 
 def create_resource(res_type, count, with_child=[]):
@@ -279,13 +281,13 @@ class Simulation(object):
     def post_verification(self):
         for jobid, job in six.iteritems(self.job_map):
             if 'INACTIVE' not in job.state_transitions:
-                job_kvs_dir = flux.job.convert_id(jobid, "dec", "kvs")
-                logger.warn("Job {} had not reached the inactive state by simulation termination time.".format(jobid))
-                logger.debug("Job {}'s eventlog:".format(jobid))
-                eventlog = flux.kvs.get_key_raw(self.flux_handle, job_kvs_dir + ".eventlog")
-                for line in eventlog.splitlines():
-                    json_event = json.loads(line)
-                    logger.debug(json_event)
+                # job_kvs_dir = flux.job.convert_id(jobid, "dec", "kvs")
+                logger.warning("Job {} had not reached the inactive state by simulation termination time.".format(jobid))
+                # logger.debug("Job {}'s eventlog:".format(jobid))
+                # eventlog = flux.kvs.get_key_raw(self.flux_handle, job_kvs_dir + ".eventlog")
+                # for line in eventlog.splitlines():
+                #     json_event = json.loads(line)
+                #     logger.debug(json_event)
 
 def datetime_to_epoch(dt):
     return int((dt - datetime(1970, 1, 1)).total_seconds())
@@ -403,25 +405,31 @@ class SacctReader(JobTraceReader):
 
 def insert_resource_data(flux_handle, num_ranks, cores_per_rank):
     """
-    Populate the KVS with the resource data of the simulated system
-    An example of the data format: {"0": {"Package": 7, "Core": 7, "PU": 7, "cpuset": "0-6"}}
+    Populate the KVS with the resource data of the simulated system using Rlist.
+    Need to reload scheduler and resource module for this to take effect.
     """
-    if num_ranks <= 0:
-        raise ValueError("Requires at least one rank")
+    if num_ranks <= 0 or cores_per_rank <= 0:
+        raise ValueError("Number of ranks and cores per rank must be positive integers")
 
-    kvs_key = "resource.hwloc.by_rank"
-    resource_dict = {}
+    rlist = Rlist()
+
     for rank in range(num_ranks):
-        resource_dict[rank] = {}
-        for key in ["Package", "Core", "PU"]:
-            resource_dict[rank][key] = cores_per_rank
-        resource_dict[rank]["cpuset"] = (
-            "0-{}".format(cores_per_rank - 1) if cores_per_rank > 1 else "0"
-        )
-    put_rc = flux.kvs.put(flux_handle, kvs_key, resource_dict)
+        core_range = f'0-{cores_per_rank - 1}' if cores_per_rank > 1 else '0'
+        rlist.add_rank(rank, cores=core_range)
+
+    rlist_str = rlist.encode()
+    rlist_json = json.loads(rlist_str)
+   
+    kvs_key = "resource.R"
+    print(rlist_json)
+    put_rc = flux.kvs.put(flux_handle, kvs_key, rlist_json)
     if put_rc is not None:
-        raise ValueError("Error inserting resource data into KVS, rc={}".format(put_rc))
-    flux.kvs.commit(flux_handle)
+        raise ValueError(f"Error inserting resource data into KVS, rc={put_rc}")
+
+    commit_rc = flux.kvs.commit(flux_handle)
+    if commit_rc is not None:
+        raise ValueError(f"Error committing resource data to KVS, rc={commit_rc}")
+
 
 
 def job_state_cb(flux_handle, watcher, msg, simulation):
@@ -452,24 +460,38 @@ def load_missing_modules(flux_handle):
     pass
 
 
-def reload_scheduler(flux_handle):
+def register_fake_resources(flux_handle):
+    '''
+    To make the resource.R that we submitted to KVS earlier register with the 
+    Flux instance, we need to reload both the resource module and scheduler in 
+    a specific order 
+    
+    (Sched Unload -> Res Unload -> Res Load -> Sched Load)
+
+    It has to be in that order or the scheduler becomes very confused
+    '''
     sched_module = "sched-simple"
     path = None
-    
-    # Check if there is a module already loaded providing 'sched' service,
-    # if so, reload that module
+    resource_module_path = None
+    # Acquire the path to the scheduling module being used
+    # Additionally, acquire the path to the resource module
     for module in get_loaded_modules(flux_handle):
         if "sched" in module["services"]:
             sched_module = module["name"]
             path = module["path"]
-        
-    logger.debug("Reloading the '{}' module".format(sched_module))
-    if path is not None:
+        if "resource" in module["name"]:
+            resource_module_path = module["path"]        
+
+
+    logger.debug("Reloading the '{}' and 'resource' module".format(sched_module))
+    if path is not None and resource_module_path is not None:
         try:
             flux_handle.rpc("module.remove", payload={"name": "sched-simple"}).get()
+            flux_handle.rpc("module.remove", payload={"name": "resource"}).get()
         except Exception as e:
             print(f"Error removing module: {e}")
         try:
+            flux_handle.rpc("module.load", payload={"path": resource_module_path, "args": []}).get()
             flux_handle.rpc("module.load", payload={"path": path, "args": []}).get()
         except Exception as e:
             print(e)
@@ -618,7 +640,7 @@ def main():
     jobs = list(reader.read_trace())
     for job in jobs:
         job.insert_apriori_events(simulation)
-    reload_scheduler(flux_handle)
+    register_fake_resources(flux_handle)
 
     load_missing_modules(flux_handle)
 

@@ -20,6 +20,7 @@ import flux.util
 import flux.kvs
 import flux.constants
 from flux.resource import Rlist
+from flux.job import JournalConsumer
 
 
 
@@ -235,7 +236,7 @@ class Simulation(object):
         logger.info("Started job {}".format(job.jobid))
         self.add_event(job.complete_time, lambda: self.complete_job(job))
         logger.debug("Registered job {} to complete at {}".format(job.jobid, job.complete_time))
-
+        
     def complete_job(self, job):
         if self.complete_job_hook:
             self.complete_job_hook(self, job)
@@ -243,7 +244,15 @@ class Simulation(object):
         logger.info("Completed job {}".format(job.jobid))
         self.pending_inactivations.add(job)
 
+        self.add_event(self.current_time + 1e-9, lambda: None)
+
+
     def record_job_state_transition(self, jobid, state):
+        """
+        Gets called by job_journal_cb to track the state of jobs to make sure they are going into the inactive state.
+        If the emulator isn't properly tracking job states, this is a good place to start looking. 
+        """
+        logger.debug(f"AAAA {state} {jobid}")
         job = self.job_map[jobid]
         job.record_state_transition(state, self.current_time)
         if state == 'INACTIVE' and job in self.pending_inactivations:
@@ -432,13 +441,6 @@ def insert_resource_data(flux_handle, num_ranks, cores_per_rank):
 
 
 
-def job_state_cb(flux_handle, watcher, msg, simulation):
-    '''
-    example payload: {u'transitions': [[63652757504, u'CLEANUP'], [63652757504, u'INACTIVE']]}
-    '''
-    logger.log(9, "Received a job state cb. msg payload: {}".format(msg.payload))
-    for jobid, state, b in msg.payload['transitions']:
-        simulation.record_job_state_transition(jobid, state)
 
 def get_loaded_modules(flux_handle):
     """
@@ -527,12 +529,44 @@ def service_remove(f, name):
     future = f.service_unregister(name)
     return f.future_get(future, None)
 
+def journal_event_cb(event, simulation):
+    """Callback invoked for each event from JournalConsumer."""
+    if event is None:
+        # None signals the end of the event stream
+        return
+
+    # Each 'event' is a JournalEvent with attributes like:
+    #   event.name       (e.g. 'submit', 'alloc', 'start', 'cleanup', 'inactive')
+    #   event.jobid
+    #   event.timestamp
+    #   event.jobspec    (if event.name == 'submit')
+    #   event.R          (if event.name == 'alloc')
+    #
+
+    if event.name.lower() == "clean":
+        simulation.record_job_state_transition(event.jobid, "INACTIVE")
+
+
+def setup_journal(flux_handle, simulation):
+    '''
+    Function to setup a consumer for job journaling using the JournalConsumer from flux.job.journal
+    '''
+
+    # 1) Create the consumer
+    consumer = JournalConsumer(flux_handle, full=True)
+
+    # 2) Register the callback
+    consumer.set_callback(journal_event_cb, simulation)
+
+    # 3) Start streaming
+    consumer.start()
+
+    return consumer
 
 def setup_watchers(flux_handle, simulation):
     watchers = []
     services = set()
     for type_mask, topic, cb, args in [
-        (flux.constants.FLUX_MSGTYPE_EVENT, "job-state", job_state_cb, simulation),
         (
             flux.constants.FLUX_MSGTYPE_REQUEST,
             "sim-exec.start",
@@ -540,8 +574,6 @@ def setup_watchers(flux_handle, simulation):
             simulation,
         ),
     ]:
-        if type_mask == flux.constants.FLUX_MSGTYPE_EVENT:
-            flux_handle.event_subscribe(topic)
         watcher = flux_handle.msg_watcher_create(
             cb, type_mask=type_mask, topic_glob=topic, args=args
         )
@@ -553,7 +585,6 @@ def setup_watchers(flux_handle, simulation):
                 service_add(flux_handle, service_name)
                 services.add(service_name)
     return watchers, services
-
 
 def teardown_watchers(flux_handle, watchers, services):
     for watcher in watchers:
@@ -649,8 +680,8 @@ def main():
     reload_modules(flux_handle)
 
     load_missing_modules(flux_handle)
-
     watchers, services = setup_watchers(flux_handle, simulation)
+    consumer = setup_journal(flux_handle, simulation)
     exec_hello(flux_handle)
     simulation.advance()
     

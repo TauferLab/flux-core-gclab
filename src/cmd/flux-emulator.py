@@ -289,15 +289,22 @@ class Simulation(object):
             self.advance()
 
     def post_verification(self):
+        '''
+        This function looks to make sure all jobs have run to completion before program ends
+        If they have not, it likely means an issue with the emulator
+        As a result, job event log will be output in the logger for each job that didn't complete
+        '''
         for jobid, job in six.iteritems(self.job_map):
             if 'INACTIVE' not in job.state_transitions:
-                # job_kvs_dir = flux.job.convert_id(jobid, "dec", "kvs")
                 logger.warning("Job {} had not reached the inactive state by simulation termination time.".format(jobid))
-                # logger.debug("Job {}'s eventlog:".format(jobid))
-                # eventlog = flux.kvs.get_key_raw(self.flux_handle, job_kvs_dir + ".eventlog")
-                # for line in eventlog.splitlines():
-                #     json_event = json.loads(line)
-                #     logger.debug(json_event)
+                eventlog = flux.job.job_kvs_lookup(self.flux_handle, jobid, keys=["eventlog"])
+                logger.debug(f"Job ID: {flux.job.JobID(eventlog["id"]).f58}")
+                lines = eventlog["eventlog"].strip().split("\n")
+                for line in lines:
+                    parsed = json.loads(line)
+                    pretty_str = json.dumps(parsed, indent=4)
+                    logger.debug(pretty_str)
+
 
 def datetime_to_epoch(dt):
     return int((dt - datetime(1970, 1, 1)).total_seconds())

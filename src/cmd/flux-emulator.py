@@ -253,6 +253,7 @@ class Simulation(object):
         If the emulator isn't properly tracking job states, this is a good place to start looking. 
         """
         logger.debug(f"AAAA {state} {jobid}")
+
         job = self.job_map[jobid]
         job.record_state_transition(state, self.current_time)
         if state == 'INACTIVE' and job in self.pending_inactivations:
@@ -412,11 +413,7 @@ class SacctReader(JobTraceReader):
         return jobs
 
 
-def insert_resource_data(flux_handle, num_ranks, cores_per_rank):
-    """
-    Populate the KVS with the resource data of the simulated system using Rlist.
-    Need to reload scheduler and resource module for this to take effect.
-    """
+def insert_resource_data(flux_handle, num_ranks, cores_per_rank, hostname_pattern="node{rank}"):
     if num_ranks <= 0 or cores_per_rank <= 0:
         raise ValueError("Number of ranks and cores per rank must be positive integers")
 
@@ -424,11 +421,12 @@ def insert_resource_data(flux_handle, num_ranks, cores_per_rank):
 
     for rank in range(num_ranks):
         core_range = f'0-{cores_per_rank - 1}' if cores_per_rank > 1 else '0'
-        rlist.add_rank(rank, cores=core_range)
+        hostname = hostname_pattern.format(rank=rank)
+        rlist.add_rank(rank, hostname=hostname, cores=core_range)
 
     rlist_str = rlist.encode()
     rlist_json = json.loads(rlist_str)
-   
+
     kvs_key = "resource.R"
     print(rlist_json)
     put_rc = flux.kvs.put(flux_handle, kvs_key, rlist_json)
@@ -482,7 +480,7 @@ def reload_modules(flux_handle):
             sched_module = module["name"]
             path = module["path"]
         if "resource" in module["name"]:
-            resource_module_path = module["path"]        
+            resource_module_path = module["path"]      
 
 
     logger.debug("Reloading the '{}' and 'resource' module".format(sched_module))
@@ -496,7 +494,7 @@ def reload_modules(flux_handle):
             flux_handle.rpc("module.load",
                 payload={
                   "path": resource_module_path,
-                  "args": ["noverify"],
+                  "args": ["noverify", "monitor-force-up"],
                 }).get()
             flux_handle.rpc("module.load", payload={"path": path, "args": []}).get()
         except Exception as e:
@@ -542,7 +540,6 @@ def journal_event_cb(event, simulation):
     #   event.jobspec    (if event.name == 'submit')
     #   event.R          (if event.name == 'alloc')
     #
-
     if event.name.lower() == "clean":
         simulation.record_job_state_transition(event.jobid, "INACTIVE")
 
@@ -553,7 +550,7 @@ def setup_journal(flux_handle, simulation):
     '''
 
     # 1) Create the consumer
-    consumer = JournalConsumer(flux_handle, full=True)
+    consumer = JournalConsumer(flux_handle, full=False)
 
     # 2) Register the callback
     consumer.set_callback(journal_event_cb, simulation)

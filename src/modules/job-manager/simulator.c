@@ -49,7 +49,6 @@ static inline bool is_quiescent (struct simulator *simulator)
 static void check_and_respond_to_quiescent_req (struct simulator *simulator)
 {
     if (simulator->sim_req == NULL || !is_quiescent (simulator)) {
-        // Either not in a simulation or not quiesced
         return;
     }
 

@@ -23,15 +23,16 @@ from flux.resource import Rlist
 from flux.job import JournalConsumer
 
 
-
 def create_resource(res_type, count, with_child=[]):
     '''
     Creates a resource dictionary for the 
 
     Note: 'count' variable must be of type int. Otherwise it will cause issues during scheduling. 
     '''
-    assert isinstance(with_child, Sequence), "child resource must be a sequence"
-    assert not isinstance(with_child, str), "child resource must not be a string"
+    assert isinstance(
+        with_child, Sequence), "child resource must be a sequence"
+    assert not isinstance(
+        with_child, str), "child resource must not be a string"
     assert count > 0, "resource count must be > 0"
     assert isinstance(count, int), "Count parameter must be of type int"
     res = {"type": res_type, "count": count}
@@ -121,19 +122,21 @@ class Job(object):
         self.start_time = start_time
         self._start_msg = start_msg.copy()
         flux_handle.respond(
-            self._start_msg, payload={"id": self.jobid, "type": "start", "data": {}}
+            self._start_msg, payload={
+                "id": self.jobid, "type": "start", "data": {}}
         )
 
     def complete(self, flux_handle):
         # TODO: emit "finish" event
         flux_handle.respond(
             self._start_msg,
-            payload={"id": self.jobid, "type": "finish", "data": {"status" : 0}}
+            payload={"id": self.jobid, "type": "finish", "data": {"status": 0}}
         )
         # TODO: emit "done" event
         flux_handle.respond(
             self._start_msg,
-            payload={"id": self.jobid, "type": "release", "data": {"ranks" : "all", "final": True}}
+            payload={"id": self.jobid, "type": "release",
+                     "data": {"ranks": "all", "final": True}}
         )
 
     def cancel(self, flux_handle):
@@ -142,10 +145,12 @@ class Job(object):
     def insert_apriori_events(self, simulation):
         # TODO: add priority to `add_event` so that all submits for a given time
         # can happen consecutively, followed by the waits for the jobids
-        simulation.add_event(self.submit_time, lambda: simulation.submit_job(self))
+        simulation.add_event(
+            self.submit_time, lambda: simulation.submit_job(self))
 
     def record_state_transition(self, state, time):
         self.state_transitions[state] = time
+
 
 class EventList(six.Iterator):
     def __init__(self):
@@ -235,8 +240,9 @@ class Simulation(object):
         job.start(self.flux_handle, start_msg, self.current_time)
         logger.info("Started job {}".format(job.jobid))
         self.add_event(job.complete_time, lambda: self.complete_job(job))
-        logger.debug("Registered job {} to complete at {}".format(job.jobid, job.complete_time))
-        
+        logger.debug("Registered job {} to complete at {}".format(
+            job.jobid, job.complete_time))
+
     def complete_job(self, job):
         if self.complete_job_hook:
             self.complete_job_hook(self, job)
@@ -246,13 +252,11 @@ class Simulation(object):
 
         self.add_event(self.current_time + 1e-9, lambda: None)
 
-
     def record_job_state_transition(self, jobid, state):
         """
         Gets called by job_journal_cb to track the state of jobs to make sure they are going into the inactive state.
         If the emulator isn't properly tracking job states, this is a good place to start looking. 
         """
-        logger.debug(f"AAAA {state} {jobid}")
 
         job = self.job_map[jobid]
         job.record_state_transition(state, self.current_time)
@@ -265,7 +269,8 @@ class Simulation(object):
         try:
             self.current_time, events_at_time = next(self.event_list)
         except StopIteration:
-            logger.info("No more events in event list, running post-sim analysis")
+            logger.info(
+                "No more events in event list, running post-sim analysis")
             self.post_verification()
             logger.info("Ending simulation")
             self.flux_handle.reactor_stop(self.flux_handle.get_reactor())
@@ -273,7 +278,8 @@ class Simulation(object):
         logger.info("Fast-forwarding time to {}".format(self.current_time))
         for event in events_at_time:
             event()
-        logger.debug("Sending quiescent request for time {}".format(self.current_time))
+        logger.debug(
+            "Sending quiescent request for time {}".format(self.current_time))
         self.flux_handle.rpc("job-manager.quiescent", {"time": self.current_time}).then(
             lambda fut, arg: arg.quiescent_cb(), arg=self
         )
@@ -296,8 +302,10 @@ class Simulation(object):
         '''
         for jobid, job in six.iteritems(self.job_map):
             if 'INACTIVE' not in job.state_transitions:
-                logger.warning("Job {} had not reached the inactive state by simulation termination time.".format(jobid))
-                eventlog = flux.job.job_kvs_lookup(self.flux_handle, jobid, keys=["eventlog"])
+                logger.warning(
+                    "Job {} had not reached the inactive state by simulation termination time.".format(jobid))
+                eventlog = flux.job.job_kvs_lookup(
+                    self.flux_handle, jobid, keys=["eventlog"])
                 logger.debug(f"Job ID: {flux.job.JobID(eventlog["id"]).f58}")
                 lines = eventlog["eventlog"].strip().split("\n")
                 for line in lines:
@@ -359,7 +367,8 @@ def job_from_slurm_row(row):
     timelimit = walltime_str_to_timedelta(row["Timelimit"]).total_seconds()
     if elapsed > timelimit:
         logger.warning(
-            "Elapsed time ({}) greater than Timelimit ({})".format(elapsed, timelimit)
+            "Elapsed time ({}) greater than Timelimit ({})".format(
+                elapsed, timelimit)
         )
     nnodes = int(row["NNodes"])
     ncpus = int(row["NCPUS"])
@@ -414,7 +423,8 @@ class SacctReader(JobTraceReader):
         For example: sacct -o nnodes,ncpus,timelimit,state,submit,elapsed,exitcode
         """
         with open(self.tracefile) as infile:
-            lines = [line for line in infile.readlines() if not line.startswith('#')]
+            lines = [line for line in infile.readlines()
+                     if not line.startswith('#')]
             reader = csv.DictReader(lines, delimiter=self.delim)
             jobs = [job_from_slurm_row(row) for row in reader]
         return jobs
@@ -422,7 +432,8 @@ class SacctReader(JobTraceReader):
 
 def insert_resource_data(flux_handle, num_ranks, cores_per_rank, hostname_pattern="node{rank}"):
     if num_ranks <= 0 or cores_per_rank <= 0:
-        raise ValueError("Number of ranks and cores per rank must be positive integers")
+        raise ValueError(
+            "Number of ranks and cores per rank must be positive integers")
 
     rlist = Rlist()
 
@@ -435,16 +446,15 @@ def insert_resource_data(flux_handle, num_ranks, cores_per_rank, hostname_patter
     rlist_json = json.loads(rlist_str)
 
     kvs_key = "resource.R"
-    print(rlist_json)
     put_rc = flux.kvs.put(flux_handle, kvs_key, rlist_json)
     if put_rc is not None:
-        raise ValueError(f"Error inserting resource data into KVS, rc={put_rc}")
+        raise ValueError(
+            f"Error inserting resource data into KVS, rc={put_rc}")
 
     commit_rc = flux.kvs.commit(flux_handle)
     if commit_rc is not None:
-        raise ValueError(f"Error committing resource data to KVS, rc={commit_rc}")
-
-
+        raise ValueError(
+            f"Error committing resource data to KVS, rc={commit_rc}")
 
 
 def get_loaded_modules(flux_handle):
@@ -453,7 +463,6 @@ def get_loaded_modules(flux_handle):
     """
     try:
         modules = flux_handle.rpc("module.list").get()["mods"]
-        print(modules)
         return modules
     except Exception as e:
         raise RuntimeError(f"Error retrieving loaded modules: {e}")
@@ -472,10 +481,10 @@ def reload_modules(flux_handle):
     To make the resource.R that we submitted to KVS earlier register with the 
     Flux instance, we need to reload both the resource module and scheduler in 
     a specific order 
-    
+
     (Sched Unload -> Res Unload -> Res Load -> Sched Load)
 
-    It has to be in that order or the scheduler becomes very confused
+    It has to be in that order or the scheduler becomes confused
     '''
     sched_module = "sched-simple"
     path = None
@@ -487,28 +496,33 @@ def reload_modules(flux_handle):
             sched_module = module["name"]
             path = module["path"]
         if "resource" in module["name"]:
-            resource_module_path = module["path"]      
+            resource_module_path = module["path"]
 
-
-    logger.debug("Reloading the '{}' and 'resource' module".format(sched_module))
+    logger.debug(
+        "Reloading the '{}' and 'resource' module".format(sched_module))
     if path is not None and resource_module_path is not None:
         try:
-            flux_handle.rpc("module.remove", payload={"name": "sched-simple"}).get()
-            flux_handle.rpc("module.remove", payload={"name": "resource"}).get()
+            flux_handle.rpc("module.remove", payload={
+                            "name": "sched-simple"}).get()
+            flux_handle.rpc("module.remove", payload={
+                            "name": "resource"}).get()
         except Exception as e:
-            print(f"Error removing module: {e}")
+            logger.error(f"Error removing module: {e}")
         try:
             flux_handle.rpc("module.load",
-                payload={
-                  "path": resource_module_path,
-                  "args": ["noverify", "monitor-force-up"],
-                }).get()
-            flux_handle.rpc("module.load", payload={"path": path, "args": []}).get()
+                            payload={
+                                "path": resource_module_path,
+                                "args": ["noverify", "monitor-force-up"],
+                            }).get()
+            flux_handle.rpc("module.load", payload={
+                            "path": path, "args": []}).get()
         except Exception as e:
-            print(e)
-    else: 
-        raise RuntimeError("Unable to get scheduler path (is your scheduler module loaded?)")
-    
+            logger.error(e)
+    else:
+        raise RuntimeError(
+            "Unable to get scheduler path (is your scheduler module loaded?)")
+
+
 def job_exception_cb(flux_handle, watcher, msg, cb_args):
     logger.warning("Detected a job exception, but not handling it")
 
@@ -522,7 +536,8 @@ def sim_exec_start_cb(flux_handle, watcher, msg, simulation):
 
 def exec_hello(flux_handle):
     logger.debug("Registering sim-exec with job-manager")
-    flux_handle.rpc("job-manager.exec-hello", payload={"service": "sim-exec"}).get()
+    flux_handle.rpc("job-manager.exec-hello",
+                    payload={"service": "sim-exec"}).get()
 
 
 def service_add(f, name):
@@ -533,6 +548,7 @@ def service_add(f, name):
 def service_remove(f, name):
     future = f.service_unregister(name)
     return f.future_get(future, None)
+
 
 def journal_event_cb(event, simulation):
     """Callback invoked for each event from JournalConsumer."""
@@ -567,6 +583,7 @@ def setup_journal(flux_handle, simulation):
 
     return consumer
 
+
 def setup_watchers(flux_handle, simulation):
     watchers = []
     services = set()
@@ -590,6 +607,7 @@ def setup_watchers(flux_handle, simulation):
                 services.add(service_name)
     return watchers, services
 
+
 def teardown_watchers(flux_handle, watchers, services):
     for watcher in watchers:
         watcher.stop()
@@ -598,6 +616,7 @@ def teardown_watchers(flux_handle, watchers, services):
 
 
 Makespan = namedtuple('Makespan', ['beginning', 'end'])
+
 
 class SimpleExec(object):
     def __init__(self, num_nodes, cores_per_node):
@@ -640,14 +659,19 @@ class SimpleExec(object):
             ))
 
         total_num_cores = self.num_nodes * self.cores_per_node
-        print("Makespan (hours): {:.1f}".format((self.makespan.end - self.makespan.beginning) / 3600))
-        total_core_hours = (total_num_cores * (self.makespan.end - self.makespan.beginning)) / 3600
+        print("Makespan (hours): {:.1f}".format(
+            (self.makespan.end - self.makespan.beginning) / 3600))
+        total_core_hours = (
+            total_num_cores * (self.makespan.end - self.makespan.beginning)) / 3600
         print("Total Core-Hours: {:,.1f}".format(total_core_hours))
         print("Used Core-Hours: {:,.1f}".format(self.used_core_hours))
         try:
-            print("Average Core-Utilization: {:.2f}%".format((self.used_core_hours / total_core_hours) * 100))
+            print("Average Core-Utilization: {:.2f}%".format(
+                (self.used_core_hours / total_core_hours) * 100))
         except:
-            print("ERROR: Total core hours is 0. Simulation likely didn't run or no jobs were submitted. ")
+            print(
+                "ERROR: Total core hours is 0. Simulation likely didn't run or no jobs were submitted. ")
+
 
 logger = logging.getLogger("flux-emulator")
 
@@ -688,7 +712,7 @@ def main():
     consumer = setup_journal(flux_handle, simulation)
     exec_hello(flux_handle)
     simulation.advance()
-    
+
     try:
         flux_handle.reactor_run(flux_handle.get_reactor(), 0)
     except Exception as e:
@@ -698,6 +722,7 @@ def main():
     except Exception as e:
         logger.error(f"Error tearing down watchers {e}")
     exec_validator.post_analysis(simulation)
+
 
 if __name__ == "__main__":
     main()

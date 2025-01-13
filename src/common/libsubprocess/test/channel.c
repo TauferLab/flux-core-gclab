@@ -384,7 +384,7 @@ void channel_nul_terminate_cb (flux_subprocess_t *p, const char *stream)
 
 void test_bufsize (flux_reactor_t *r)
 {
-    char *av[] = { "/bin/true", NULL };
+    char *av[] = { "true", NULL };
     flux_cmd_t *cmd;
     flux_subprocess_t *p = NULL;
 
@@ -427,7 +427,7 @@ void test_bufsize (flux_reactor_t *r)
 
 void test_bufsize_error (flux_reactor_t *r)
 {
-    char *av[] = { "/bin/true", NULL };
+    char *av[] = { "true", NULL };
     flux_cmd_t *cmd;
     flux_subprocess_t *p = NULL;
     flux_subprocess_ops_t ops = {
@@ -475,11 +475,11 @@ int main (int argc, char *argv[])
 
     plan (NO_PLAN);
 
-    // Create shared reactor for all tests
-    ok ((r = flux_reactor_create (FLUX_REACTOR_SIGCHLD)) != NULL,
-        "flux_reactor_create");
-
     start_fdcount = fdcount ();
+
+    // Create shared reactor for all tests
+    ok ((r = flux_reactor_create (0)) != NULL,
+        "flux_reactor_create");
 
     diag ("channel_fd_env");
     test_channel_fd_env (r);
@@ -494,12 +494,13 @@ int main (int argc, char *argv[])
     diag ("bufsize_error");
     test_bufsize_error (r);
 
+    flux_reactor_destroy (r);
+
     end_fdcount = fdcount ();
 
     ok (start_fdcount == end_fdcount,
         "no file descriptors leaked");
 
-    flux_reactor_destroy (r);
     done_testing ();
     return 0;
 }

@@ -21,24 +21,14 @@ SYNOPSIS
 
   void flux_reactor_stop_error (flux_reactor_t *r);
 
-  void flux_reactor_active_incref (flux_reactor_t *r);
-
-  void flux_reactor_active_decref (flux_reactor_t *r);
-
 Link with :command:`-lflux-core`.
 
 DESCRIPTION
 ===========
 
 :func:`flux_reactor_create` creates a :type:`flux_reactor_t` object which can
-be used to monitor for events on file descriptors, ZeroMQ sockets, timers, and
-:type:`flux_t` broker handles.
-
-There is currently only one possible flag for reactor creation:
-
-FLUX_REACTOR_SIGCHLD
-   The reactor will internally register a SIGCHLD handler and be capable
-   of handling flux child watchers (see :man3:`flux_child_watcher_create`).
+be used to monitor for events on file descriptors, timers, and
+:type:`flux_t` broker handles.  :var:`flags` should be set to zero.
 
 For each event source and type that is to be monitored, a :type:`flux_watcher_t`
 object is created using a type-specific create function, and started
@@ -80,16 +70,6 @@ The caller should ensure that a valid error code has been assigned to
 :func:`flux_reactor_destroy` releases an internal reference taken at
 :func:`flux_reactor_create` time. Freeing of the underlying resources will
 be deferred if there are any remaining watchers associated with the reactor.
-
-:func:`flux_reactor_active_decref` and :func:`flux_reactor_active_incref`
-manipulate the reactor's internal count of active watchers. Each active
-watcher takes a reference count on the reactor, and the reactor returns
-when this count reaches zero. It is useful sometimes to have a watcher that
-can remain active without preventing the reactor from exiting. To achieve this,
-call :func:`flux_reactor_active_decref` after the watcher is started, and
-:func:`flux_reactor_active_incref` before the watcher is stopped.
-Remember that destroying an active reactor internally stops it,
-so be sure to stop/incref such a watcher first.
 
 
 RETURN VALUE

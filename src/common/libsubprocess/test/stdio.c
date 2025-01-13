@@ -1085,7 +1085,7 @@ void test_line_buffer_disable (flux_reactor_t *r)
 
 void test_line_buffer_error (flux_reactor_t *r)
 {
-    char *av[] = { "/bin/true", NULL };
+    char *av[] = { "true", NULL };
     flux_cmd_t *cmd;
     flux_subprocess_t *p = NULL;
 
@@ -1596,11 +1596,11 @@ int main (int argc, char *argv[])
 
     plan (NO_PLAN);
 
-    // Create shared reactor for all tests
-    ok ((r = flux_reactor_create (FLUX_REACTOR_SIGCHLD)) != NULL,
-        "flux_reactor_create");
-
     start_fdcount = fdcount ();
+
+    // Create shared reactor for all tests
+    ok ((r = flux_reactor_create (0)) != NULL,
+        "flux_reactor_create");
 
     diag ("basic_stdout");
     test_basic_stdout (r);
@@ -1655,12 +1655,13 @@ int main (int argc, char *argv[])
     diag ("on_credit_borrow_credits");
     test_on_credit_borrow_credits (r);
 
+    flux_reactor_destroy (r);
+
     end_fdcount = fdcount ();
 
     ok (start_fdcount == end_fdcount,
         "no file descriptors leaked");
 
-    flux_reactor_destroy (r);
     done_testing ();
     return 0;
 }

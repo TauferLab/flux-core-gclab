@@ -20,6 +20,8 @@ noinst_LTLIBRARIES = \
 libsubprocess_la_SOURCES = \
 	command.c \
 	command_private.h \
+	sigchld.c \
+	sigchld.h \
 	local.c \
 	local.h \
 	fork.c \
@@ -36,10 +38,6 @@ libsubprocess_la_SOURCES = \
 	subprocess_private.h \
 	client.h \
 	client.c \
-	ev_fbuf_read.h \
-	ev_fbuf_read.c \
-	ev_fbuf_write.h \
-	ev_fbuf_write.c \
 	fbuf.h \
 	fbuf.c \
 	fbuf_watcher.h \
@@ -52,6 +50,7 @@ fluxcoreinclude_HEADERS = \
 	subprocess.h
 
 TESTS = \
+	test_sigchld.t \
 	test_command.t \
 	test_subprocess.t \
 	test_stdio.t \
@@ -84,6 +83,7 @@ test_ldadd = \
         $(top_builddir)/src/common/libtap/libtap.la \
         $(top_builddir)/src/common/libsubprocess/libsubprocess.la \
         $(top_builddir)/src/common/libflux-core.la \
+        $(top_builddir)/src/common/libflux/libflux.la \
         $(top_builddir)/src/common/libflux-internal.la
 
 test_ldflags = \
@@ -104,6 +104,11 @@ bulk_exec_LDADD = \
 	$(top_builddir)/src/common/libflux-optparse.la
 
 bulk_exec_LDFLAGS = $(test_ldflags)
+
+test_sigchld_t_SOURCES = test/sigchld.c
+test_sigchld_t_CPPFLAGS = $(test_cppflags)
+test_sigchld_t_LDADD = $(test_ldadd)
+test_sigchld_t_LDFLAGS = $(test_ldflags)
 
 test_command_t_SOURCES = test/command.c
 test_command_t_CPPFLAGS = $(test_cppflags)

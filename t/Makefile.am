@@ -179,6 +179,7 @@ TESTSCRIPTS = \
 	t2313-resource-acquire.t \
 	t2314-resource-monitor.t \
 	t2315-resource-system.t \
+	t2316-resource-rediscover.t \
 	t2350-resource-list.t \
 	t2351-resource-status-input.t \
 	t2352-resource-cmd-config.t \
@@ -216,6 +217,7 @@ TESTSCRIPTS = \
 	t2617-job-shell-stage-in.t \
 	t2618-job-shell-signal.t \
 	t2619-job-shell-hwloc.t \
+	t2620-job-shell-mustache.t \
 	t2710-python-cli-submit.t \
 	t2711-python-cli-run.t \
 	t2713-python-cli-bulksubmit.t \
@@ -423,6 +425,7 @@ check_PROGRAMS = \
 	kvs/dtree \
 	kvs/blobref \
 	kvs/watch_disconnect \
+	kvs/watch_stream \
 	kvs/commit \
 	kvs/fence_api \
 	kvs/transactionmerge \
@@ -667,6 +670,11 @@ kvs_watch_disconnect_CPPFLAGS = $(test_cppflags)
 kvs_watch_disconnect_LDADD = $(test_ldadd)
 kvs_watch_disconnect_LDFLAGS = $(test_ldflags)
 
+kvs_watch_stream_SOURCES = kvs/watch_stream.c
+kvs_watch_stream_CPPFLAGS = $(test_cppflags)
+kvs_watch_stream_LDADD = $(test_ldadd)
+kvs_watch_stream_LDFLAGS = $(test_ldflags)
+
 kvs_issue1760_SOURCES = kvs/issue1760.c
 kvs_issue1760_CPPFLAGS = $(test_cppflags)
 kvs_issue1760_LDADD = $(test_ldadd)
@@ -750,14 +758,16 @@ reactor_reactorcat_CPPFLAGS = $(test_cppflags)
 reactor_reactorcat_LDADD = $(test_ldadd)
 reactor_reactorcat_LDFLAGS = \
 	$(top_builddir)/src/common/libsubprocess/libsubprocess.la \
-	$(test_ldflags)
+	$(test_ldflags) \
+	$(top_builddir)/src/common/libflux/libflux.la
 
 rexec_rexec_SOURCES = rexec/rexec.c
 rexec_rexec_CPPFLAGS = $(test_cppflags)
 rexec_rexec_LDADD = $(test_ldadd)
 rexec_rexec_LDFLAGS = \
 	$(top_builddir)/src/common/libsubprocess/libsubprocess.la \
-	$(test_ldflags)
+	$(test_ldflags) \
+	$(top_builddir)/src/common/libflux/libflux.la
 
 rexec_rexec_count_stdout_SOURCES = rexec/rexec_count_stdout.c
 rexec_rexec_count_stdout_CPPFLAGS = $(test_cppflags)
@@ -769,7 +779,8 @@ rexec_rexec_getline_CPPFLAGS = $(test_cppflags)
 rexec_rexec_getline_LDADD = $(test_ldadd)
 rexec_rexec_getline_LDFLAGS = \
 	$(top_builddir)/src/common/libsubprocess/libsubprocess.la \
-	$(test_ldflags)
+	$(test_ldflags) \
+	$(top_builddir)/src/common/libflux/libflux.la
 
 ingest_job_manager_la_SOURCES = ingest/job-manager.c
 ingest_job_manager_la_CPPFLAGS = $(test_cppflags)

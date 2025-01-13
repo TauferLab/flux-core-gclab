@@ -74,7 +74,22 @@ flux_shell_SOURCES = \
 	input/service.c \
 	input/file.c \
 	input/kvs.c \
-	output.c \
+	output/filehash.h \
+	output/filehash.c \
+	output/client.h \
+	output/client.c \
+	output/kvs.h \
+	output/kvs.c \
+	output/conf.h \
+	output/conf.c \
+	output/task.h \
+	output/task.c \
+	output/service.h \
+	output/service.c \
+	output/log.h \
+	output/log.c \
+	output/output.h \
+	output/output.c \
 	svc.c \
 	svc.h \
 	kill.c \
@@ -99,7 +114,8 @@ flux_shell_SOURCES = \
 	signal.c \
 	files.c \
 	hwloc.c \
-	rexec.c
+	rexec.c \
+	env-expand.c
 
 if HAVE_INOTIFY
 flux_shell_SOURCES += oom.c
@@ -116,6 +132,7 @@ flux_shell_LDADD = \
 	$(top_builddir)/src/common/libflux-taskmap.la \
 	$(top_builddir)/src/common/libflux-idset.la \
 	$(top_builddir)/src/common/libsubprocess/libsubprocess.la \
+	$(top_builddir)/src/common/libflux/libflux.la \
 	$(top_builddir)/src/common/libpmi/libpmi_server.la \
 	$(top_builddir)/src/common/libpmi/libpmi_common.la \
 	$(top_builddir)/src/common/libczmqcontainers/libczmqcontainers.la \

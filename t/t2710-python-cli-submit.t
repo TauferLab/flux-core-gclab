@@ -59,11 +59,11 @@ test_expect_success 'flux submit --flags debug,waitable works' '
 	flux job eventlog $jobid | grep submit | grep flags=6
 '
 test_expect_success 'flux submit --flags=novalidate works' '
-	jobid=$(flux submit --flags novalidate /bin/true) &&
+	jobid=$(flux submit --flags novalidate true) &&
 	flux job eventlog $jobid | grep submit | grep flags=8
 '
 test_expect_success 'flux submit with bad flags fails' '
-	test_must_fail flux submit --flags notaflag /bin/true
+	test_must_fail flux submit --flags notaflag true
 '
 test_expect_success 'flux submit --time-limit=5d works' '
 	flux submit --dry-run --time-limit=5d hostname >t5d.out &&
@@ -334,6 +334,20 @@ test_expect_success 'flux submit --add-file=name=file works' '
 	flux submit -n1 --watch --add-file=myfile=file.txt \
 		cp {{tmpdir}}/myfile . &&
 	test_cmp file.txt myfile
+'
+test_expect_success 'flux submit --add-file=name=data works' '
+	flux submit -n1 --watch --add-file=add-file.test="this is a test\n" \
+		cp {{tmpdir}}/add-file.test . &&
+	grep "this is a test" add-file.test
+'
+test_expect_success 'flux submit --add-file=name:perms=data works' '
+	flux submit -n1 --watch --add-file=test:0700="#!/bin/sh\ntrue\n" \
+		{{tmpdir}}/test
+'
+test_expect_success 'flux submit --add-file allows colon in name' '
+	flux submit -n1 --watch --add-file=add-file:test="this is a test\n" \
+		cp {{tmpdir}}/add-file:test . &&
+	grep "this is a test" add-file:test
 '
 test_expect_success 'flux submit --add-file complains for non-regular files' '
 	test_must_fail flux submit -n1 --add-file=/tmp hostname

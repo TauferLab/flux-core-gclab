@@ -20,7 +20,7 @@ test_expect_success 'job-shell: errors on unknown argument' '
 
 test_expect_success 'job-shell: reads J not jobspec' '
 	id=$(flux submit --wait-event=priority \
-		-n1 --urgency=hold /bin/true) &&
+		-n1 --urgency=hold true) &&
 	flux job info ${id} jobspec \
 		| jq ".tasks[0].command[0] = \"false\"" >jobspec.new &&
 	flux kvs put \
@@ -31,7 +31,7 @@ test_expect_success 'job-shell: reads J not jobspec' '
 
 test_expect_success 'job-shell: fails on modified J' '
 	id=$(flux submit --wait-event=priority \
-		-n1 --urgency=hold /bin/true) &&
+		-n1 --urgency=hold true) &&
 	flux job info ${id} J | sed s/./%/85 > J.new &&
 	flux kvs put \
 		$(flux job id --to=kvs ${id}).J="$(cat J.new)" &&
@@ -71,13 +71,13 @@ test_expect_success 'job-shell: execute 2 tasks per rank' '
 	flux kvs dir ${kvsdir}.guest.test2 | sort >test2.out &&
 	test_cmp test2.exp test2.out
 '
-test_expect_success 'job-shell: /bin/true exit code propagated' '
-	id=$(flux submit /bin/true) &&
+test_expect_success 'job-shell: true exit code propagated' '
+	id=$(flux submit true) &&
 	flux job wait-event $id finish >true.finish.out &&
 	grep status=0 true.finish.out
 '
-test_expect_success 'job-shell: /bin/false exit code propagated' '
-	id=$(flux submit /bin/false) &&
+test_expect_success 'job-shell: false exit code propagated' '
+	id=$(flux submit false) &&
 	flux job wait-event $id finish >false.finish.out &&
 	grep status=256 false.finish.out
 '
@@ -340,25 +340,12 @@ test_expect_success 'job-shell: FLUX_JOB_TMPDIR is created in TMPDIR' '
 test_expect_success 'job-shell: job fails if FLUX_JOB_TMPDIR cannot be created' '
 	chmod u-w mytmpdir &&
 	! TMPDIR=$(pwd)/mytmpdir \
-		flux run /bin/true 2>badjobtmp.err &&
+		flux run true 2>badjobtmp.err &&
 	grep exception badjobtmp.err
 '
 
 test_expect_success 'job-shell: restore rundir writability' '
 	chmod 700 $(flux getattr rundir)
-'
-
-test_expect_success 'job-shell: fails if FLUX_EXEC_PROTOCOL_FD incorrect' '
-	cat <<-EOF >shell2.sh &&
-	#!/bin/sh
-	export FLUX_EXEC_PROTOCOL_FD=foo
-	exec ${FLUX_BUILD_DIR}/src/shell/flux-shell "\$@"
-	EOF
-	chmod +x shell2.sh &&
-	test_must_fail flux run \
-		--setattr=system.exec.job_shell=$(pwd)/shell2.sh \
-		-n2 -N2 hostname 2>protocol_fd_invalid.err &&
-	grep FLUX_EXEC_PROTOCOL_FD protocol_fd_invalid.err
 '
 test_expect_success 'job-shell: corrects HOSTNAME environment variable' '
 	HOSTNAME=incorrect \

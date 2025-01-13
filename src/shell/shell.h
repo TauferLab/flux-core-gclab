@@ -87,8 +87,10 @@ int flux_shell_get_environ (flux_shell_t *shell, char **json_str);
 
 /*  Set an environment variable in the global job environment
  */
-int flux_shell_setenvf (flux_shell_t *shell, int overwrite,
-                        const char *name, const char *fmt, ...)
+int flux_shell_setenvf (flux_shell_t *shell,
+                        int overwrite,
+                        const char *name,
+                        const char *fmt, ...)
                         __attribute__ ((format (printf, 4, 5)));
 
 /*  Unset an environment variable in the global job environment
@@ -131,9 +133,11 @@ int flux_shell_info_unpack (flux_shell_t *shell,
 /*  Return rank and task info for given shell rank as JSON string.
  *  {
  *   "broker_rank":i,
+ *   "id":i,      // same as shell_rank parameter
+ *   "name":s,    // hostname of this shell_rank
  *   "ntasks":i
  *   "taskids": s // task id list for this rank in RFC 22 idset form.
- *   "resources": { "cores":s, ... }
+ *   "resources": { "ncores":i, "cores":s, ... }
  *  }
  */
 int flux_shell_get_rank_info (flux_shell_t *shell,
@@ -411,6 +415,19 @@ int flux_shell_log_setlevel (int level, const char *dest);
  */
 char *flux_shell_mustache_render (flux_shell_t *shell, const char *fmt);
 
+/*  Same as flux_shell_mustache_render(3), but render for an alternate
+ *  shell rank. Caller must free result.
+ */
+char *flux_shell_rank_mustache_render (flux_shell_t *shell,
+                                       int shell_rank,
+                                       const char *fmt);
+
+/*  Same as flux_shell_mustache_render(3), but render for a specific task.
+ *  Caller must free result.
+ */
+char *flux_shell_task_mustache_render (flux_shell_t *shell,
+                                       flux_shell_task_t *task,
+                                       const char *fmt);
 
 #ifdef __cplusplus
 }

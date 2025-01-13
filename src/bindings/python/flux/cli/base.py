@@ -288,10 +288,11 @@ def get_filtered_environment(rules, environ=None):
     Filter environment dictionary 'environ' given a list of rules.
     Each rule can filter, set, or modify the existing environment.
     """
+    env_expand = {}
     if environ is None:
         environ = dict(os.environ)
     if rules is None:
-        return environ
+        return environ, env_expand
     for rule in rules:
         #
         #  If rule starts with '-' then the rest of the rule is a pattern
@@ -308,7 +309,8 @@ def get_filtered_environment(rules, environ=None):
             filename = os.path.expanduser(rule[1::])
             with open(filename) as envfile:
                 lines = [line.strip() for line in envfile]
-                environ = get_filtered_environment(lines, environ=environ)
+                environ, envx = get_filtered_environment(lines, environ=environ)
+                env_expand.update(envx)
         #
         #  Otherwise, the rule is an explicit variable assignment
         #   VAR=VAL. If =VAL is not provided then VAL refers to the
@@ -330,6 +332,11 @@ def get_filtered_environment(rules, environ=None):
                 for key, value in env.items():
                     if key not in environ:
                         environ[key] = value
+            elif "{{" in rest[0]:
+                #
+                #  Mustache template which should be expanded by job shell.
+                #  Place result in env_expand instead of environ:
+                env_expand[var] = rest[0]
             else:
                 #
                 #  Template lookup: use jobspec environment first, fallback
@@ -342,7 +349,7 @@ def get_filtered_environment(rules, environ=None):
                     raise
                 except KeyError as ex:
                     raise Exception(f"--env: Variable {ex} not found in {rule}")
-    return environ
+    return environ, env_expand
 
 
 class EnvFileAction(argparse.Action):
@@ -821,8 +828,9 @@ class MiniCmd:
             action="append",
             help="Add a file at PATH with optional NAME to jobspec. The "
             + "file will be extracted to {{tmpdir}}/NAME. If NAME is not "
-            + "specified, then the basename of PATH will be used. (multiple "
-            + "use OK)",
+            + "specified, then the basename of PATH will be used. If "
+            + "necessary, permissions may be specified via NAME:PERMS. "
+            + "(multiple use OK)",
             metavar="[NAME=]PATH",
         )
         parser.add_argument(
@@ -967,13 +975,46 @@ class MiniCmd:
         """
         raise NotImplementedError()
 
+    def handle_add_file_arg(self, jobspec, arg):
+        """Process a single argument to --add-file=ARG."""
+        perms = None
+        #  Note: Replace any newline escaped by the shell with literal '\n'
+        #  so that newline detection below works for file data passed on
+        #  on the command line:
+        name, _, data = arg.replace("\\n", "\n").partition("=")
+        if not data:
+            # No '=' implies path-only argument (no multiline allowed)
+            if "\n" in name:
+                raise ValueError("--add-file: file name missing")
+            data = name
+            name = basename(data)
+        else:
+            # Check if name specifies permissions after ':'
+            tmpname, _, permstr = name.partition(":")
+            try:
+                perms = int(permstr, base=8)
+                name = tmpname
+            except ValueError:
+                # assume ':' was part of name
+                pass
+        try:
+            jobspec.add_file(name, data, perms=perms)
+        except (TypeError, ValueError, OSError) as exc:
+            raise ValueError(f"--add-file={arg}: {exc}") from None
+
     # pylint: disable=too-many-branches,too-many-statements
     def jobspec_create(self, args):
         """
         Create a jobspec from args and return it to caller
         """
         jobspec = self.init_jobspec(args)
-        jobspec.environment = get_filtered_environment(args.env)
+
+        jobspec.environment, env_expand = get_filtered_environment(args.env)
+        if env_expand:
+            # "expanded" environment variables are set in env-expand
+            # shell options dict and will be processed by the shell.
+            jobspec.setattr_shell_option("env-expand", env_expand)
+
         jobspec.cwd = args.cwd if args.cwd is not None else os.getcwd()
         rlimits = get_filtered_rlimits(args.rlimit)
         if rlimits:
@@ -1081,17 +1122,7 @@ class MiniCmd:
 
         if args.add_file is not None:
             for arg in args.add_file:
-                name, _, data = arg.partition("=")
-                if not data:
-                    # No '=' implies path-only argument (no multiline allowed)
-                    if "\n" in name:
-                        raise ValueError("--add-file: file name missing")
-                    data = name
-                    name = basename(data)
-                try:
-                    jobspec.add_file(name, data)
-                except (TypeError, ValueError, OSError) as exc:
-                    raise ValueError(f"--add-file={arg}: {exc}") from None
+                self.handle_add_file_arg(jobspec, arg)
 
         return jobspec
 
@@ -1518,7 +1549,7 @@ class SubmitBulkCmd(SubmitBaseCmd):
 
             #  Don't let this timer watcher contribute to the reactor's
             #   "active" reference count:
-            self.flux_handle.reactor_decref()
+            timer.unref()
 
         if submit:
             self.progress.update(

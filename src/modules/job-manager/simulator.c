@@ -68,6 +68,10 @@ static void sched_quiescent_continuation(flux_future_t *f, void *arg)
     struct job_manager *ctx = arg;
     struct simulator *simulator = ctx->simulator;
 
+    if (flux_future_get(f, NULL) < 0) {
+        flux_log_error(ctx->h, "sim quiescent response invalid. does the scheduler support sched.quiescent?\n");
+    }
+
     if (simulator->sim_req == NULL) {
         flux_log_error (ctx->h, "%s: sim quiescent request is NULL", __FUNCTION__);
         return;
@@ -99,9 +103,12 @@ void sim_sending_sched_request (struct simulator *simulator)
     }
 
     flux_log (ctx->h, LOG_DEBUG, "sending quiescent req to scheduler");
-    simulator->sched_req = flux_rpc (ctx->h, "sched.quiescent", NULL, 0, 0);
-    if (simulator->sched_req == NULL)
+    simulator->sched_req = flux_rpc (ctx->h, "sched.quiescent", NULL, 0, 0);    
+    if (simulator->sched_req == NULL) {
+        // flux_log(ctx->h, LOG_DEBUG, "broke\n");
         flux_respond_error(ctx->h, simulator->sim_req, errno, "job-manager: sim_sending_sched_request: flux_rpc failed");
+
+    }
     if (flux_future_then (simulator->sched_req, -1, sched_quiescent_continuation, ctx) < 0)
         flux_respond_error(ctx->h, simulator->sim_req, errno, "job-manager: sim_sending_sched_request: flux_future_then failed");
 }

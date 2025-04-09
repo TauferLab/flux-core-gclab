@@ -19,8 +19,10 @@ import flux.job
 import flux.util
 import flux.kvs
 import flux.constants
+from flux.core.watchers import TimerWatcher
 from flux.resource import Rlist
 from flux.job import JournalConsumer
+import time
 
 
 def create_resource(res_type, count, with_child=[]):
@@ -216,16 +218,21 @@ class Simulation(object):
         self.job_map = job_map
         self.current_time = 0
         self.flux_handle = flux_handle
+        self.num_submits = 0
+        self.num_complete = 0
         self.pending_inactivations = set()
         self.job_manager_quiescent = True
         self.submit_job_hook = submit_job_hook
         self.start_job_hook = start_job_hook
         self.complete_job_hook = complete_job_hook
+        self.pending_continuation = False
 
     def add_event(self, time, callback):
         self.event_list.add_event(time, callback)
 
     def submit_job(self, job):
+        self.num_submits += 1
+        job.record_state_transition("SUBMITTED", self.current_time)
         if self.submit_job_hook:
             self.submit_job_hook(self, job)
         logger.debug("Submitting a new job")
@@ -235,64 +242,102 @@ class Simulation(object):
 
     def start_job(self, jobid, start_msg):
         job = self.job_map[jobid]
+        job.record_state_transition("STARTED", self.current_time)
         if self.start_job_hook:
             self.start_job_hook(self, job)
         job.start(self.flux_handle, start_msg, self.current_time)
         logger.info("Started job {}".format(job.jobid))
         self.add_event(job.complete_time, lambda: self.complete_job(job))
-        logger.debug("Registered job {} to complete at {}".format(
+        logger.info("Registered job {} to complete at {}".format(
             job.jobid, job.complete_time))
+        
+        if self.pending_continuation:
+            self.pending_continuation = False
+            self.flux_handle.rpc("job-manager.quiescent", {"time": self.current_time}).then(
+                lambda fut, arg: arg.quiescent_cb(), arg=self
+            )
+
 
     def complete_job(self, job):
+        self.num_complete += 1
+        job.record_state_transition("COMPLETED", self.current_time)
         if self.complete_job_hook:
             self.complete_job_hook(self, job)
         job.complete(self.flux_handle)
         logger.info("Completed job {}".format(job.jobid))
         self.pending_inactivations.add(job)
 
-        self.add_event(self.current_time + 1e-9, lambda: None)
 
     def record_job_state_transition(self, jobid, state):
         """
         Gets called by job_journal_cb to track the state of jobs to make sure they are going into the inactive state.
-        If the emulator isn't properly tracking job states, this is a good place to start looking. 
         """
 
         job = self.job_map[jobid]
         job.record_state_transition(state, self.current_time)
         if state == 'INACTIVE' and job in self.pending_inactivations:
+            # Have to add this event or the emulator will try to exit before actually running the next job if there is one
+            # Needs to be revisited
+            self.add_event(self.current_time + 1e-9, lambda: None)
             self.pending_inactivations.remove(job)
             if self.is_quiescent():
-                self.advance()
+                self.pending_continuation = False
+                print("advancing from state transition")
+                self.flux_handle.rpc("job-manager.quiescent", {"time": self.current_time}).then(
+                lambda fut, arg: arg.quiescent_cb(), arg=self
+                )
 
-    def advance(self):
+    def advance(self, *args, **kwargs):
+        '''
+        Primary loop for the emulator
+        '''
+        events_at_time = []  
         try:
             self.current_time, events_at_time = next(self.event_list)
         except StopIteration:
-            logger.info(
-                "No more events in event list, running post-sim analysis")
-            self.post_verification()
-            logger.info("Ending simulation")
-            self.flux_handle.reactor_stop(self.flux_handle.get_reactor())
-            return
+            if self.num_complete < self.num_submits:
+                self.pending_continuation = True
+                pass
+            else:
+                print(f"completes {self.num_complete} submits {self.num_submits}")
+                logger.info(
+                    "No more events in event list, running post-sim analysis")
+                self.post_verification()
+                logger.info("Ending simulation")
+                self.flux_handle.reactor_stop(self.flux_handle.get_reactor())
+                return  
+
+        # Now events_at_time is guaranteed to be defined
         logger.info("Fast-forwarding time to {}".format(self.current_time))
-        for event in events_at_time:
-            event()
-        logger.debug(
-            "Sending quiescent request for time {}".format(self.current_time))
-        self.flux_handle.rpc("job-manager.quiescent", {"time": self.current_time}).then(
-            lambda fut, arg: arg.quiescent_cb(), arg=self
-        )
+        if len(events_at_time) > 0:
+            for event in events_at_time:
+                event()
+            logger.info(
+                "Sending quiescent request for time {}".format(self.current_time))
+            self.flux_handle.rpc("job-manager.quiescent", {"time": self.current_time}).then(
+                lambda fut, arg: arg.quiescent_cb(), arg=self
+            )
         self.job_manager_quiescent = False
 
     def is_quiescent(self):
         return self.job_manager_quiescent and len(self.pending_inactivations) == 0
 
     def quiescent_cb(self):
-        logger.debug("Received a response indicating the system is quiescent")
+        logger.info("Received a response indicating the system is quiescent")
         self.job_manager_quiescent = True
+
         if self.is_quiescent():
-            self.advance()
+            self.pending_continuation = False
+            logger.info("Scheduling next advance after 100ms delay")
+            self.timer = TimerWatcher(
+                self.flux_handle,
+                0.1,       
+                self.advance  
+            )
+            self.timer.start() 
+        else:
+            logger.info("Ending from quiescent")
+
 
     def post_verification(self):
         '''
@@ -312,6 +357,32 @@ class Simulation(object):
                     parsed = json.loads(line)
                     pretty_str = json.dumps(parsed, indent=4)
                     logger.debug(pretty_str)
+
+    def dump_eventlog(self):
+        fieldnames = [
+            "jobid", "submit", "validate", "depend", "priority", 
+            "alloc", "start", "finish", "release", "free", "clean"
+        ]
+        
+        with open("eventlog.csv", "w", newline="") as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            
+            for jobid, job in six.iteritems(self.job_map):
+                eventlog = flux.job.job_kvs_lookup(self.flux_handle, jobid, keys=["eventlog"])
+                
+                row = {"jobid": jobid}
+                for event in fieldnames[1:]:
+                    row[event] = ""
+                
+                lines = eventlog["eventlog"].strip().split("\n")
+                for line in lines:
+                    parsed = json.loads(line)
+                    evt = parsed.get("name", parsed.get("type", "")).lower()
+                    if evt in fieldnames[1:]:
+                        if not row[evt]:
+                            row[evt] = parsed.get("timestamp", "")
+                writer.writerow(row)
 
 
 def datetime_to_epoch(dt):
@@ -476,7 +547,7 @@ def load_missing_modules(flux_handle):
     pass
 
 
-def reload_modules(flux_handle):
+def reload_modules(flux_handle, scheduler, queue_policy = "fcfs"):
     '''
     To make the resource.R that we submitted to KVS earlier register with the 
     Flux instance, we need to reload both the resource module and scheduler in 
@@ -485,6 +556,8 @@ def reload_modules(flux_handle):
     (Sched Unload -> Res Unload -> Res Load -> Sched Load)
 
     It has to be in that order or the scheduler becomes confused
+
+    scheduler parameter defines if we want to use fluxion or sched simple. Eventually, we will define policies here when reloading schedulers
     '''
     sched_module = "sched-simple"
     path = None
@@ -492,35 +565,63 @@ def reload_modules(flux_handle):
     # Acquire the path to the scheduling module being used
     # Additionally, acquire the path to the resource module
     for module in get_loaded_modules(flux_handle):
-        if "sched" in module["services"]:
+        print(module)
+        if "sched-simple" in module["services"]:
             sched_module = module["name"]
             path = module["path"]
-        if "resource" in module["name"]:
+        elif "sched-fluxion-qmanager" in module["name"]:
+            sched_module = "fluxion"
+            fluxion_qmanager_path = module["path"]
+        elif "sched-fluxion-resource" in module["name"]:
+            fluxion_resource_path = module["path"]
+        elif "resource" in module["name"]:
             resource_module_path = module["path"]
 
+    if path:
+        print(f"{path}")
+    elif fluxion_qmanager_path:
+        print(fluxion_qmanager_path)
     logger.debug(
         "Reloading the '{}' and 'resource' module".format(sched_module))
-    if path is not None and resource_module_path is not None:
+    if  resource_module_path is not None:
         try:
-            flux_handle.rpc("module.remove", payload={
-                            "name": "sched-simple"}).get()
+            if sched_module == "sched-simple":
+                flux_handle.rpc("module.remove", payload={
+                                "name": "sched-simple"}).get()
+            else:
+                flux_handle.rpc("module.remove", payload={
+                                "name": "sched-fluxion-qmanager"}).get()
+                flux_handle.rpc("module.remove", payload={
+                                "name": "sched-fluxion-resource"}).get()
             flux_handle.rpc("module.remove", payload={
                             "name": "resource"}).get()
+            
         except Exception as e:
             logger.error(f"Error removing module: {e}")
+        
+        
         try:
             flux_handle.rpc("module.load",
                             payload={
                                 "path": resource_module_path,
                                 "args": ["noverify", "monitor-force-up"],
                             }).get()
-            flux_handle.rpc("module.load", payload={
-                            "path": path, "args": []}).get()
+            if sched_module == "sched-simple":
+                flux_handle.rpc("module.load", payload={
+                                "path": path, "args": []}).get()
+            else:
+                flux_handle.rpc("module.load", payload={
+                                "path": fluxion_resource_path, "args": []}).get()
+                # "queue-policy=conservative"
+                flux_handle.rpc("module.load", payload={
+                                "path": fluxion_qmanager_path, "args": [f"queue-policy={queue_policy}"]}).get()
+
         except Exception as e:
             logger.error(e)
     else:
         raise RuntimeError(
             "Unable to get scheduler path (is your scheduler module loaded?)")
+
 
 
 def job_exception_cb(flux_handle, watcher, msg, cb_args):
@@ -553,7 +654,6 @@ def service_remove(f, name):
 def journal_event_cb(event, simulation):
     """Callback invoked for each event from JournalConsumer."""
     if event is None:
-        # None signals the end of the event stream
         return
 
     # Each 'event' is a JournalEvent with attributes like:
@@ -571,14 +671,8 @@ def setup_journal(flux_handle, simulation):
     '''
     Function to setup a consumer for job journaling using the JournalConsumer from flux.job.journal
     '''
-
-    # 1) Create the consumer
-    consumer = JournalConsumer(flux_handle, full=False)
-
-    # 2) Register the callback
+    consumer = JournalConsumer(flux_handle, full=True)
     consumer.set_callback(journal_event_cb, simulation)
-
-    # 3) Start streaming
     consumer.start()
 
     return consumer
@@ -675,6 +769,23 @@ class SimpleExec(object):
 
 logger = logging.getLogger("flux-emulator")
 
+def dump_transitions_to_csv(simulation, filename="job_transitions.csv"):
+    '''
+    This notes all of the submit, start, and end times of the jobs in the simulation
+    '''
+    fieldnames = ["jobid", "SUBMIT", "START", "FINISH", "nnodes"]
+    with open(filename, "w", newline="") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        for jobid, job in simulation.job_map.items():
+            row = {
+                "jobid": jobid,
+                "SUBMIT": job.state_transitions.get("SUBMITTED", ""),
+                "START": job.state_transitions.get("STARTED", ""),
+                "FINISH": job.state_transitions.get("COMPLETED", ""),
+                "nnodes": job.nnodes
+            }
+            writer.writerow(row)
 
 @flux.util.CLIMain(logger)
 def main():
@@ -705,9 +816,10 @@ def main():
     jobs = list(reader.read_trace())
     for job in jobs:
         job.insert_apriori_events(simulation)
-    reload_modules(flux_handle)
+    scheduler = 1
+    reload_modules(flux_handle, scheduler, queue_policy="conservative")
 
-    load_missing_modules(flux_handle)
+    load_missing_modules(flux_handle )
     watchers, services = setup_watchers(flux_handle, simulation)
     consumer = setup_journal(flux_handle, simulation)
     exec_hello(flux_handle)
@@ -722,6 +834,17 @@ def main():
     except Exception as e:
         logger.error(f"Error tearing down watchers {e}")
     exec_validator.post_analysis(simulation)
+    time.sleep(2)
+    simulation.dump_eventlog()
+
+    dump_transitions_to_csv(simulation, "job_transitions.csv")
+    print("Job Life Cycle Transitions:")
+    for jobid, job in simulation.job_map.items():
+        print("Job {}:".format(jobid))
+        for state, timestamp in job.state_transitions.items():
+            print("  {} at time {}".format(state, timestamp))
+
+    
 
 
 if __name__ == "__main__":

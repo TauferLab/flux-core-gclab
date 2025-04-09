@@ -160,7 +160,6 @@ static void alloc_response_cb (flux_t *h,
     json_t *R = NULL;
     struct job *job;
 
-    sim_received_alloc_response (ctx->simulator);
 
     if (flux_response_decode (msg, NULL, NULL) < 0)
         goto teardown; // ENOSYS here if scheduler not loaded/shutting down
@@ -179,6 +178,7 @@ static void alloc_response_cb (flux_t *h,
 
     switch (type) {
     case FLUX_SCHED_ALLOC_SUCCESS:
+        sim_received_alloc_response (ctx->simulator);
         if (!R) {
             flux_log (h, LOG_ERR, "sched.alloc-response: protocol error");
             errno = EPROTO;

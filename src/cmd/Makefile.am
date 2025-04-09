@@ -117,6 +117,7 @@ dist_fluxcmd_SCRIPTS = \
 	flux-pgrep.py \
 	flux-queue.py \
 	flux-cancel.py \
+	flux-emulator.py \
 	flux-watch.py \
 	flux-update.py \
 	flux-imp-exec-helper \

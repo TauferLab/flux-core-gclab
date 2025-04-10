@@ -671,7 +671,7 @@ def setup_journal(flux_handle, simulation):
     '''
     Function to setup a consumer for job journaling using the JournalConsumer from flux.job.journal
     '''
-    consumer = JournalConsumer(flux_handle, full=True)
+    consumer = JournalConsumer(flux_handle, full=False)
     consumer.set_callback(journal_event_cb, simulation)
     consumer.start()
 

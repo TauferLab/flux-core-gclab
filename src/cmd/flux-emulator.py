@@ -27,7 +27,7 @@ import time
 
 def create_resource(res_type, count, with_child=[]):
     '''
-    Creates a resource dictionary for the 
+    Creates a resource dictionary for a Job
 
     Note: 'count' variable must be of type int. Otherwise it will cause issues during scheduling. 
     '''
@@ -45,12 +45,18 @@ def create_resource(res_type, count, with_child=[]):
 
 
 def create_slot(label, count, with_child):
+    '''
+    Helper function for creating the slot section of a jobspec for a Job
+    '''
     slot = create_resource("slot", math.ceil(count), with_child)
     slot["label"] = label
     return slot
 
 
 class Job(object):
+    '''
+    Class to track individual jobs within the emulator
+    '''
     def __init__(self, nnodes, ncpus, submit_time, elapsed_time, timelimit, exitcode=0):
         self.nnodes = nnodes
         self.ncpus = ncpus
@@ -95,6 +101,9 @@ class Job(object):
         return self._jobspec
 
     def submit(self, flux_handle):
+        '''
+        Used to asynchronously submit a job to Flux 
+        '''
         jobspec_json = json.dumps(self.jobspec)
         logger.log(9, jobspec_json)
         flags = 0
@@ -121,6 +130,9 @@ class Job(object):
         return self.start_time + self.elapsed_time
 
     def start(self, flux_handle, start_msg, start_time):
+        '''
+        Records the time that the job was started by Flux and tells the job manager that the request is being handled
+        '''
         self.start_time = start_time
         self._start_msg = start_msg.copy()
         flux_handle.respond(
@@ -129,6 +141,9 @@ class Job(object):
         )
 
     def complete(self, flux_handle):
+        '''
+        Emits the finish and release events when a job is complete
+        '''
         # TODO: emit "finish" event
         flux_handle.respond(
             self._start_msg,
@@ -142,25 +157,49 @@ class Job(object):
         )
 
     def cancel(self, flux_handle):
+        '''
+        Emits the cancel event for a job
+        '''
         flux.job.RAW.cancel(flux_handle, self.jobid, "Canceled by emulator")
 
     def insert_apriori_events(self, simulation):
+        '''
+        Adds the submit times for every job into the event list
+
+        This defines the order in which jobs are submitted to flux 
+        '''
         # TODO: add priority to `add_event` so that all submits for a given time
         # can happen consecutively, followed by the waits for the jobids
         simulation.add_event(
             self.submit_time, lambda: simulation.submit_job(self))
 
     def record_state_transition(self, state, time):
+        '''
+        Adds the time that a job state transition occurred to a dict "state_transitions"
+        '''
         self.state_transitions[state] = time
 
 
 class EventList(six.Iterator):
+    '''
+    Class that is used to store all events that happen within the emulator along with the time that they will occur
+
+    For example: the submit time for each job is added to the event list at the initialization of the emulator.
+
+    The internal loop of the emulator will handle all events that occur at the same time. Then, it waits for some set of conditions
+    to occur before executing the next set of events
+    '''
     def __init__(self):
         self.time_heap = []
         self.time_map = {}
         self._current_time = None
 
     def add_event(self, time, callback):
+        '''
+        Add an event to the event list
+
+        Takes in a time that the event will occur and a callback function to be invoked at that time
+        '''
         if self._current_time is not None and time <= self._current_time:
             logger.warning(
                 "Adding a new event at a time ({}) <= the current time ({})".format(
@@ -205,6 +244,11 @@ class EventList(six.Iterator):
 
 
 class Simulation(object):
+    '''
+    Primary class for the emulator
+
+    Contains functions needed to orchestrate the emulator 
+    '''
     def __init__(
             self,
             flux_handle,
@@ -228,9 +272,17 @@ class Simulation(object):
         self.pending_continuation = False
 
     def add_event(self, time, callback):
+        '''
+        Adds an event to the emulator's event list
+
+        Takes in a time that the event will occur and a callback function to be invoked at that time
+        '''
         self.event_list.add_event(time, callback)
 
     def submit_job(self, job):
+        '''
+        Invokes the job submit function for a specific job and records the state transition in its state transition dict
+        '''
         self.num_submits += 1
         job.record_state_transition("SUBMITTED", self.current_time)
         if self.submit_job_hook:
@@ -241,6 +293,13 @@ class Simulation(object):
         logger.info("Submitted job {}".format(job.jobid))
 
     def start_job(self, jobid, start_msg):
+        '''
+        Invoked whenever a request to start a job is made by the job manager
+
+        Will record the event within the job's state transition dict
+
+        If the internal loop of the emulator is paused, it will resume it after double checking that the scheduler is inactive 
+        '''
         job = self.job_map[jobid]
         job.record_state_transition("STARTED", self.current_time)
         if self.start_job_hook:
@@ -259,6 +318,9 @@ class Simulation(object):
 
 
     def complete_job(self, job):
+        '''
+        This is used to trigger the finish and release events for a job when the time to complete it is reached
+        '''
         self.num_complete += 1
         job.record_state_transition("COMPLETED", self.current_time)
         if self.complete_job_hook:
@@ -270,7 +332,9 @@ class Simulation(object):
 
     def record_job_state_transition(self, jobid, state):
         """
-        Gets called by job_journal_cb to track the state of jobs to make sure they are going into the inactive state.
+        This is called whenever the job manager records the "COMPLETED" event within the event journal for a specific job
+
+        This means cleanup for the job is finished and the resources have been released by the scheduler
         """
 
         job = self.job_map[jobid]
@@ -289,7 +353,24 @@ class Simulation(object):
 
     def advance(self, *args, **kwargs):
         '''
-        Primary loop for the emulator
+        "Internal" loop for the emulator.
+
+        It will process all of the events that occur and the next time in the event list
+
+        If there are no events currently, the emulator will exit. However, if there are more jobs submitted than jobs completed
+        the emulator will set pending_continuation where it will be continued when a job starts up
+
+        Whenever all events for a specific point in time have been processed, we will check for "quiescence" or whether the 
+        scheduler is idle. We wait until the scheduler is idle before proceeding in case new events are added. 
+
+        This phase can be thought of as a "collection" phase. We collect new start events. This phase is where the emulator is
+        most likely to break because it isn't possible for us to determine which jobs need to be scheduled at a specific time. 
+
+        Currently, we wait til the scheduler is idle and then wait another 100ms to make sure that nothing else is starting up.
+        This is because sometimes the scheduler will be idle for a tiny window before scheduling the next job instead of just 
+        scheduling them both before becoming idle. 
+        
+        #TODO make this process more reliable 
         '''
         events_at_time = []  
         try:
@@ -306,8 +387,6 @@ class Simulation(object):
                 logger.info("Ending simulation")
                 self.flux_handle.reactor_stop(self.flux_handle.get_reactor())
                 return  
-
-        # Now events_at_time is guaranteed to be defined
         logger.info("Fast-forwarding time to {}".format(self.current_time))
         if len(events_at_time) > 0:
             for event in events_at_time:
@@ -320,9 +399,17 @@ class Simulation(object):
         self.job_manager_quiescent = False
 
     def is_quiescent(self):
+        '''
+        Checks for some conditions that imply the system is not quiescent
+        '''
         return self.job_manager_quiescent and len(self.pending_inactivations) == 0
 
     def quiescent_cb(self):
+        '''
+        Calls upon the scheduler to see if it is idle
+
+        Will call advance if it becomes idle after waiting for 100ms 
+        '''
         logger.info("Received a response indicating the system is quiescent")
         self.job_manager_quiescent = True
 
@@ -359,6 +446,11 @@ class Simulation(object):
                     logger.debug(pretty_str)
 
     def dump_eventlog(self):
+        '''
+        prints the eventlog to a csv
+
+        #TODO make this more configurable 
+        '''
         fieldnames = [
             "jobid", "submit", "validate", "depend", "priority", 
             "alloc", "start", "finish", "release", "free", "clean"
@@ -412,6 +504,9 @@ def walltime_str_to_timedelta(walltime_str):
 
 @six.add_metaclass(ABCMeta)
 class JobTraceReader(object):
+    '''
+    Class that is used to ingest job traces 
+    '''
     def __init__(self, tracefile):
         self.tracefile = tracefile
 
@@ -425,6 +520,9 @@ class JobTraceReader(object):
 
 
 def job_from_slurm_row(row):
+    '''
+    generates a Job class from a sacct style job trace
+    '''
     kwargs = {}
     if "ExitCode" in row:
         kwargs["exitcode"] = "ExitCode"
@@ -502,6 +600,14 @@ class SacctReader(JobTraceReader):
 
 
 def insert_resource_data(flux_handle, num_ranks, cores_per_rank, hostname_pattern="node{rank}"):
+    '''
+    Generates a resource set from the user input and inserts it into KVS
+
+    This will replace the default system resource set that is generated by the resource module
+
+    Because of this, we have to restart the resource module and scheduler so they take in our
+    resource set.
+    '''
     if num_ranks <= 0 or cores_per_rank <= 0:
         raise ValueError(
             "Number of ranks and cores per rank must be positive integers")
@@ -625,10 +731,16 @@ def reload_modules(flux_handle, scheduler, queue_policy = "fcfs"):
 
 
 def job_exception_cb(flux_handle, watcher, msg, cb_args):
+    '''
+    Placeholder for handling job excceptions
+    '''
     logger.warning("Detected a job exception, but not handling it")
 
 
 def sim_exec_start_cb(flux_handle, watcher, msg, simulation):
+    '''
+    callback that is invoked whenever jobs reach the start state in the job manager
+    '''
     payload = msg.payload
     logger.log(9, "Received sim-exec.start request. Payload: {}".format(payload))
     jobid = payload["id"]
@@ -636,6 +748,9 @@ def sim_exec_start_cb(flux_handle, watcher, msg, simulation):
 
 
 def exec_hello(flux_handle):
+    '''
+    Registers the simple exec module as the exec system in the job manager
+    '''
     logger.debug("Registering sim-exec with job-manager")
     flux_handle.rpc("job-manager.exec-hello",
                     payload={"service": "sim-exec"}).get()
@@ -679,6 +794,11 @@ def setup_journal(flux_handle, simulation):
 
 
 def setup_watchers(flux_handle, simulation):
+    '''
+    Adds all appropriate watchers to the emulator
+
+    Currently, only adds one to watch for "sim-exec.start"
+    '''
     watchers = []
     services = set()
     for type_mask, topic, cb, args in [
@@ -703,6 +823,9 @@ def setup_watchers(flux_handle, simulation):
 
 
 def teardown_watchers(flux_handle, watchers, services):
+    '''
+    Destructs watchers
+    '''
     for watcher in watchers:
         watcher.stop()
     for service_name in services:
@@ -713,6 +836,9 @@ Makespan = namedtuple('Makespan', ['beginning', 'end'])
 
 
 class SimpleExec(object):
+    '''
+    Simple exec module that is used to simulate the execution of jobs in the eyes of Flux
+    '''
     def __init__(self, num_nodes, cores_per_node):
         self.num_nodes = num_nodes
         self.cores_per_node = cores_per_node
@@ -725,15 +851,26 @@ class SimpleExec(object):
         )
 
     def update_makespan(self, current_time):
+        '''
+        Helper function that allows you to modify the makespan
+        '''
         if current_time < self.makespan.beginning:
             self.makespan = self.makespan._replace(beginning=current_time)
         if current_time > self.makespan.end:
             self.makespan = self.makespan._replace(end=current_time)
 
     def submit_job(self, simulation, job):
+        '''
+        Updates the makespan on job submission
+        '''
         self.update_makespan(simulation.current_time)
 
     def start_job(self, simulation, job):
+        '''
+        Checks to make sure the job requirements are feasible for jobs that are starting
+
+        #TODO This does not work properly when allocating less cores than an entire node
+        '''
         self.num_free_nodes -= job.nnodes
         if self.num_free_nodes < 0:
             logger.error("Scheduler over-subscribed nodes")
@@ -741,11 +878,17 @@ class SimpleExec(object):
             logger.error("Scheduler over-subscribed cores on the node")
 
     def complete_job(self, simulation, job):
+        '''
+        Updates the makespan for jobs that complete
+        '''
         self.num_free_nodes += job.nnodes
         self.used_core_hours += (job.ncpus * job.elapsed_time) / 3600
         self.update_makespan(simulation.current_time)
 
     def post_analysis(self, simulation):
+        '''
+        Outputs statistics about the simulation whenever called
+        '''
         if self.makespan.beginning > self.makespan.end:
             logger.warning("Makespan beginning ({}) greater than end ({})".format(
                 self.makespan.beginning,
